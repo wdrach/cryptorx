@@ -1,7 +1,7 @@
-import { Subject } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
+import { pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
-import { time } from 'console';
 
 // TODO - this should be all products
 // https://api.pro.coinbase.com/products
@@ -10,29 +10,6 @@ type CoinbaseGranularity = 60 | 300 | 900 | 3600 | 21600 | 86400;
 
 const COINBASE_API = 'https://api.pro.coinbase.com';
 
-class CoinbaseProPrice extends Subject<number> {
-  constructor(product: CoinbaseProduct = 'BTC-USD') {
-    const ws = new WS('wss://ws-feed.pro.coinbase.com');
-
-    ws.addEventListener('message', (ev: any) => {
-      const data = JSON.parse(ev.data);
-
-      const currentPrice = parseFloat(data.price);
-
-      if (isNaN(currentPrice)) return;
-
-      this.next(currentPrice);
-    });
-
-    ws.addEventListener('open', () => {
-      ws.send(JSON.stringify({
-        type: 'subscribe',
-        channels: [{name: 'ticker', product_ids: [product]}]
-      }));
-    });
-    super();
-  }
-}
 
 class Candle {
   time: number;
@@ -63,8 +40,45 @@ volume: ${this.volume}
   }
 }
 
+class Price extends Subject<number> {
+  constructor(input?: Subject<any> | Observable<any>, key?: string) {
+    super();
+
+    if (input) {
+      let inputObs: Observable<number> | Subject<number> = key ? input.pipe(pluck(key)) : input;
+      inputObs.subscribe((val: any) => {
+        this.next(val);
+      });
+    }
+  }
+}
+
+class CoinbaseProPrice extends Price {
+  constructor(product: CoinbaseProduct = 'BTC-USD') {
+    super();
+
+    const ws = new WS('wss://ws-feed.pro.coinbase.com');
+
+    ws.addEventListener('message', (ev: any) => {
+      const data = JSON.parse(ev.data);
+
+      const currentPrice = parseFloat(data.price);
+
+      if (isNaN(currentPrice)) return;
+
+      this.next(currentPrice);
+    });
+
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({
+        type: 'subscribe',
+        channels: [{name: 'ticker', product_ids: [product]}]
+      }));
+    });
+  }
+}
+
 const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number) => {
-  console.log('making request for: ', current)
   // go forward one candle's worth
   const startDate = new Date(current);
   const startStr = startDate.toISOString()
@@ -79,10 +93,6 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
 
   const endDate = new Date(current)
   const endStr = endDate.toISOString()
-
-  console.log('start: ' + startDate.getTime());
-  console.log('end: ', endDate.getTime());
-
 
   // bump cur by 1 more minute before updating so we don't overlap that minute
   current += 60*1000
@@ -106,6 +116,8 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
 
 class CoinbaseProCandle extends Subject<Candle> {
   constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60) {
+    super();
+
     _fetchCandles(product, prefetch, period, Date.now() - (prefetch * period * 1000)).then((candles: Array<Candle>) => {
       for (let candle of candles) {
         this.next(candle);
@@ -135,11 +147,31 @@ class CoinbaseProCandle extends Subject<Candle> {
           lastTimestamp = intervalCandles[intervalCandles.length - 1].time;
         }, 1000 * period)
       }, 1000 * delay)
-
-
     });
+  }
 
-    super();
+  time(): Observable<number> {
+    return this.pipe(pluck('time'))
+  }
+
+  open(): Price {
+    return new Price(this.pipe(pluck('open')));
+  }
+
+  close(): Price {
+    return new Price(this.pipe(pluck('close')));
+  }
+
+  high(): Price {
+    return new Price(this.pipe(pluck('high')));
+  }
+
+  low(): Price {
+    return new Price(this.pipe(pluck('low')));
+  }
+
+  volume(): Observable<number> {
+    return this.pipe(pluck('volume'));
   }
 }
 
@@ -151,6 +183,6 @@ price.subscribe((priceVal) => console.log(priceVal));
 
 const candles = new CoinbaseProCandle();
 
-candles.subscribe((candle: Candle) => {
-  console.log(candle.time);
+candles.time().subscribe((time: number) => {
+  console.log(time);
 });
