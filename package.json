@@ -1,0 +1,32 @@
+{
+  "name": "cryptorx",
+  "version": "0.0.1",
+  "description": "RxJS + Coinbase Pro + Technical Analysis Operators",
+  "main": "index.js",
+  "dependencies": {
+    "axios": "^0.21.1",
+    "rxjs": "^6.6.3",
+    "typescript": "^4.1.4",
+    "ws": "^7.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.27",
+    "@types/ws": "^7.4.0",
+    "ts-node-dev": "^1.1.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc -p .",
+    "start": "ts-node src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wdrach/cryptorx.git"
+  },
+  "author": "will.drach@gmail.com",
+  "license": "Beerware",
+  "bugs": {
+    "url": "https://github.com/wdrach/cryptorx/issues"
+  },
+  "homepage": "https://github.com/wdrach/cryptorx#readme"
+}
