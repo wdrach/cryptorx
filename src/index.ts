@@ -1,4 +1,4 @@
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, zip } from 'rxjs';
 import { map, pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
@@ -52,17 +52,14 @@ class Price extends Subject<number> {
     }
   }
 
-  sma(period: number): Observable<any> {
-    let acc = {values: new Array<number>(), average: 0};
+  sma(period: number): Observable<number> {
+    let values: Array<number> = [];
     const reducer = map((val: number) => {
-      if (acc.values.length >= period) {
-        acc.values.shift();
+      if (values.length >= period) {
+        values.shift();
       }
-      acc.values.push(val);
-
-      acc.average = (acc.values.reduce((a, b) => a + b, 0) / acc.values.length);
-
-      return acc.average;
+      values.push(val);
+      return (values.reduce((a, b) => a + b, 0) / values.length);
     });
 
     return this.pipe(reducer);
@@ -191,6 +188,15 @@ class CoinbaseProCandle extends Subject<Candle> {
   }
 }
 
+function decide<T>(a: Observable<T>, b: Observable<T>, operator: (valA: T, valB: T) => boolean): Observable<boolean> {
+  return zip(a, b).pipe(map(([mapValA, mapValB]) => operator(mapValA, mapValB)));
+}
+
+function log(type: string): (val: any) => void {
+  return (val: any) => console.log(`${type}: ${val}`);
+}
+
+
 /*
 const price = new CoinbaseProPrice();
 price.subscribe((priceVal) => console.log(priceVal));
@@ -198,7 +204,17 @@ price.subscribe((priceVal) => console.log(priceVal));
 
 
 const candles = new CoinbaseProCandle();
+const sma100 = candles.close().sma(100);
+const sma50 = candles.close().sma(50);
 
-candles.close().sma(100).subscribe((sma: number) => {
-  console.log('sma:', sma);
-})
+// golden cross
+const goldenCross = decide(sma100, sma50, (a, b) => a < b);
+
+// death cross
+const deathCross = decide(sma100, sma50, (a, b) => a > b);
+
+sma50.subscribe(log('sma50'));
+sma100.subscribe(log('sma100'));
+
+goldenCross.subscribe(log('golden cross'));
+deathCross.subscribe(log('death cross'));
