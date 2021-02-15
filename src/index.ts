@@ -1,5 +1,5 @@
 import { Observable, Subject } from 'rxjs';
-import { pluck } from 'rxjs/operators';
+import { map, pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 
@@ -50,6 +50,22 @@ class Price extends Subject<number> {
         this.next(val);
       });
     }
+  }
+
+  sma(period: number): Observable<any> {
+    let acc = {values: new Array<number>(), average: 0};
+    const reducer = map((val: number) => {
+      if (acc.values.length >= period) {
+        acc.values.shift();
+      }
+      acc.values.push(val);
+
+      acc.average = (acc.values.reduce((a, b) => a + b, 0) / acc.values.length);
+
+      return acc.average;
+    });
+
+    return this.pipe(reducer);
   }
 }
 
@@ -183,6 +199,6 @@ price.subscribe((priceVal) => console.log(priceVal));
 
 const candles = new CoinbaseProCandle();
 
-candles.time().subscribe((time: number) => {
-  console.log(time);
-});
+candles.close().sma(100).subscribe((sma: number) => {
+  console.log('sma:', sma);
+})
