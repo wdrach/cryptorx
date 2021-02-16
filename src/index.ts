@@ -1,4 +1,4 @@
-import { Observable, Subject, zip } from 'rxjs';
+import { Observable, Subject, Subscription, TimeoutError, zip } from 'rxjs';
 import { map, pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
@@ -41,12 +41,14 @@ volume: ${this.volume}
 }
 
 class Price extends Subject<number> {
+  _subscription: Subscription | undefined;
+
   constructor(input?: Subject<any> | Observable<any>, key?: string) {
     super();
 
     if (input) {
       let inputObs: Observable<number> | Subject<number> = key ? input.pipe(pluck(key)) : input;
-      inputObs.subscribe((val: any) => {
+      this._subscription = inputObs.subscribe((val: any) => {
         this.next(val);
       });
     }
@@ -63,6 +65,13 @@ class Price extends Subject<number> {
     });
 
     return this.pipe(reducer);
+  }
+
+  unsubscribe() {
+    if (this._subscription) {
+      this._subscription.unsubscribe();
+    }
+    super.unsubscribe();
   }
 }
 
@@ -128,6 +137,8 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
 }
 
 class CoinbaseProCandle extends Subject<Candle> {
+  _timeout: NodeJS.Timeout | undefined;
+
   constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60) {
     super();
 
@@ -143,7 +154,7 @@ class CoinbaseProCandle extends Subject<Candle> {
 
       if (delay < 0) delay = 0;
 
-      setTimeout(async () => {
+      this._timeout = setTimeout(async () => {
         const timeoutCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
         for (let candle of timeoutCandles) {
           this.next(candle);
@@ -151,7 +162,7 @@ class CoinbaseProCandle extends Subject<Candle> {
 
         lastTimestamp = timeoutCandles[timeoutCandles.length - 1].time;
 
-        setInterval(async () => {
+        this._timeout = setInterval(async () => {
           const intervalCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
           for (let candle of intervalCandles) {
             this.next(candle);
@@ -186,10 +197,31 @@ class CoinbaseProCandle extends Subject<Candle> {
   volume(): Observable<number> {
     return this.pipe(pluck('volume'));
   }
+
+  unsubscribe() {
+    if (this._timeout) {
+      clearTimeout(this._timeout);
+    }
+
+    super.unsubscribe();
+  }
 }
 
-function decide<T>(a: Observable<T>, b: Observable<T>, operator: (valA: T, valB: T) => boolean): Observable<boolean> {
-  return zip(a, b).pipe(map(([mapValA, mapValB]) => operator(mapValA, mapValB)));
+class Decision<T> extends Subject<boolean> {
+  _subscription: Subscription;
+
+  constructor(a: Observable<T>, b: Observable<T>, operator: (valA: T, valB: T) => boolean) {
+    super();
+
+    this._subscription = zip(a, b).pipe(map(([mapValA, mapValB]) => operator(mapValA, mapValB))).subscribe((decision: boolean) => {
+      this.next(decision);
+    });
+  }
+
+  unsubscribe() {
+    this._subscription.unsubscribe();
+    super.unsubscribe();
+  }
 }
 
 function log(type: string): (val: any) => void {
@@ -208,10 +240,10 @@ const sma100 = candles.close().sma(100);
 const sma50 = candles.close().sma(50);
 
 // golden cross
-const goldenCross = decide(sma100, sma50, (a, b) => a < b);
+const goldenCross = new Decision(sma100, sma50, (a, b) => a < b);
 
 // death cross
-const deathCross = decide(sma100, sma50, (a, b) => a > b);
+const deathCross = new Decision(sma100, sma50, (a, b) => a > b);
 
 sma50.subscribe(log('sma50'));
 sma100.subscribe(log('sma100'));
