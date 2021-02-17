@@ -9,7 +9,7 @@ type CoinbaseProduct = 'BTC-USD';
 type CoinbaseGranularity = 60 | 300 | 900 | 3600 | 21600 | 86400;
 
 const COINBASE_API = 'https://api.pro.coinbase.com';
-
+const COINBASE_EARLIEST_TIMESTAMP = 1437428220000;
 
 class Candle {
   time: number;
@@ -100,26 +100,27 @@ class CoinbaseProPrice extends Price {
   }
 }
 
-const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number) => {
+const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number, endTime?: number) => {
   // go forward one candle's worth
   const startDate = new Date(current);
-  const startStr = startDate.toISOString()
+  const startStr = startDate.toISOString();
 
-  current += 300*period*1000
+  current += 300*period*1000;
 
   let cancel = false
-  if (Date.now() <= current) {
-    current = Date.now()
-    cancel = true
+  if (!endTime) endTime = Date.now();
+  if (endTime <= current) {
+    current = endTime;
+    cancel = true;
   }
 
-  const endDate = new Date(current)
-  const endStr = endDate.toISOString()
+  const endDate = new Date(current);
+  const endStr = endDate.toISOString();
 
   // bump cur by 1 more minute before updating so we don't overlap that minute
-  current += 60*1000
+  current += 60*1000;
 
-  const query = 'start=' + startStr + '&end=' + endStr
+  const query = 'start=' + startStr + '&end=' + endStr;
   const data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`).catch(err => console.error(err));
 
   if (data) {
@@ -128,7 +129,7 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
       return new Candle(bucket);
     })
     // TODO - there's a chance we'll hit burst request limits at some point here
-    if (!cancel) snapshot.push(...await _fetchCandles(product, prefetch, period, current));
+    if (!cancel) snapshot.push(...await _fetchCandles(product, prefetch, period, current, endTime));
 
     return snapshot;
   }
@@ -139,13 +140,20 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
 class CoinbaseProCandle extends Subject<Candle> {
   _timeout: NodeJS.Timeout | undefined;
 
-  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60) {
+  // ONLY USE TIMESTAMP FOR TESTING PURPOSES
+  // TODO - yknow, like, actually document this
+  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60, timestamp?: number) {
     super();
 
-    _fetchCandles(product, prefetch, period, Date.now() - (prefetch * period * 1000)).then((candles: Array<Candle>) => {
+    let startTime = timestamp || (Date.now() - (prefetch * period * 1000));
+    let endTime = timestamp ? timestamp + (prefetch * period * 1000) : undefined;
+
+    _fetchCandles(product, prefetch, period, startTime, endTime).then((candles: Array<Candle>) => {
       for (let candle of candles) {
         this.next(candle);
       }
+
+      if (timestamp) return;
 
       let lastTimestamp = candles[candles.length - 1].time;
       const now = Date.now() / 1000;
@@ -207,6 +215,19 @@ class CoinbaseProCandle extends Subject<Candle> {
   }
 }
 
+class CoinbaseProSimulation extends CoinbaseProCandle {
+  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60) {
+    let last = Date.now() - (prefetch * period * 1000);
+    if (last < COINBASE_EARLIEST_TIMESTAMP) {
+      last = COINBASE_EARLIEST_TIMESTAMP;
+    }
+
+    let timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
+
+    super(product, prefetch, period, timestamp);
+  }
+}
+
 class Decision<T> extends Subject<boolean> {
   _subscription: Subscription;
 
@@ -234,8 +255,14 @@ const price = new CoinbaseProPrice();
 price.subscribe((priceVal) => console.log(priceVal));
 */
 
-
+/*
+const candles = new CoinbaseProCandle(undefined, undefined, undefined, COINBASE_EARLIEST_TIMESTAMP);
 const candles = new CoinbaseProCandle();
+*/
+
+const candles = new CoinbaseProSimulation();
+candles.time().subscribe(log('time'));
+
 const sma100 = candles.close().sma(100);
 const sma50 = candles.close().sma(50);
 
