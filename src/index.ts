@@ -1,5 +1,5 @@
-import { Observable, Subject, Subscription, TimeoutError, zip } from 'rxjs';
-import { map, pluck } from 'rxjs/operators';
+import { forkJoin, Observable, Subject, Subscription, TimeoutError, zip } from 'rxjs';
+import { finalize, map, pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 
@@ -100,7 +100,10 @@ class CoinbaseProPrice extends Price {
   }
 }
 
-const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number, endTime?: number) => {
+const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number, endTime?: number):Promise<Candle[]> => {
+  const inputEndTime = endTime;
+  const inputCurrent = current;
+
   // go forward one candle's worth
   const startDate = new Date(current);
   const startStr = startDate.toISOString();
@@ -121,16 +124,27 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
   current += 60*1000;
 
   const query = 'start=' + startStr + '&end=' + endStr;
-  const data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`).catch(err => console.error(err));
+
+  let data;
+
+  try {
+    data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`)
+  } catch (e) {
+    let prom = new Promise<Candle[]>((resolve) => {
+      setTimeout(async () => {
+        resolve(await _fetchCandles(product, prefetch, period, inputCurrent, inputEndTime));
+      }, 1500)
+    });
+
+    return await prom;
+  }
 
   if (data) {
     const body = data.data;
     const snapshot = body.reverse().map((bucket: Array<number>) => {
       return new Candle(bucket);
-    })
-    // TODO - there's a chance we'll hit burst request limits at some point here
+    });
     if (!cancel) snapshot.push(...await _fetchCandles(product, prefetch, period, current, endTime));
-
     return snapshot;
   }
 
@@ -140,8 +154,14 @@ const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period:
 class CoinbaseProCandle extends Subject<Candle> {
   _timeout: NodeJS.Timeout | undefined;
 
-  // ONLY USE TIMESTAMP FOR TESTING PURPOSES
-  // TODO - yknow, like, actually document this
+  /**
+   * Constructs and prefetches a Subject of historical CoinbaseProCandles
+   * 
+   * @param product A string of the Coinbase product to query for.
+   * @param prefetch The number of candles to prefetch
+   * @param period The granularity, in seconds, of how large the candles are
+   * @param timestamp For testing & simulation only, use to fetch a set number of historical candles starting at this timestamp
+   */
   constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60, timestamp?: number) {
     super();
 
@@ -153,7 +173,10 @@ class CoinbaseProCandle extends Subject<Candle> {
         this.next(candle);
       }
 
-      if (timestamp) return;
+      if (timestamp) {
+        this.complete();
+        return;
+      }
 
       let lastTimestamp = candles[candles.length - 1].time;
       const now = Date.now() / 1000;
@@ -216,7 +239,7 @@ class CoinbaseProCandle extends Subject<Candle> {
 }
 
 class CoinbaseProSimulation extends CoinbaseProCandle {
-  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60) {
+  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 2400, period: CoinbaseGranularity = 60) {
     let last = Date.now() - (prefetch * period * 1000);
     if (last < COINBASE_EARLIEST_TIMESTAMP) {
       last = COINBASE_EARLIEST_TIMESTAMP;
@@ -249,31 +272,98 @@ function log(type: string): (val: any) => void {
   return (val: any) => console.log(`${type}: ${val}`);
 }
 
+let totalCash = 0;
+let totalExpected = 0;
 
-/*
-const price = new CoinbaseProPrice();
-price.subscribe((priceVal) => console.log(priceVal));
-*/
+function transact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
+  const buySignal = signals[0];
+  const sellSignal = signals[1];
 
-/*
-const candles = new CoinbaseProCandle(undefined, undefined, undefined, COINBASE_EARLIEST_TIMESTAMP);
-const candles = new CoinbaseProCandle();
-*/
+  let price = 0;
+  candles.close().subscribe((val) => price = val);
 
-const candles = new CoinbaseProSimulation();
-candles.time().subscribe(log('time'));
+  let firstPrice = 0;
 
-const sma100 = candles.close().sma(100);
-const sma50 = candles.close().sma(50);
+  let dollars = 1000;
+  let btc = 0;
 
-// golden cross
-const goldenCross = new Decision(sma100, sma50, (a, b) => a < b);
+  zip(buySignal, sellSignal)
+  .subscribe(([sell, buy]) => {
+    if (!firstPrice) firstPrice = price;
 
-// death cross
-const deathCross = new Decision(sma100, sma50, (a, b) => a > b);
+    if (sell && btc) {
+      dollars = price*btc;
+    } else if (buy && dollars) {
+      btc = dollars/price;
+    }
+  })
 
-sma50.subscribe(log('sma50'));
-sma100.subscribe(log('sma100'));
+  candles.subscribe({complete: () => {
+    let cash = dollars || price*btc;
+    totalCash += cash;
+    let expected = price * 1000/firstPrice;
+    totalExpected += expected;
+  }});
 
-goldenCross.subscribe(log('golden cross'));
-deathCross.subscribe(log('death cross'));
+  return candles;
+}
+
+let algo = (candles: CoinbaseProCandle) => {
+  const sma100 = candles.close().sma(200);
+  const sma50 = candles.close().sma(100);
+
+  // golden cross
+  const goldenCross = new Decision(sma100, sma50, (a, b) => a < b);
+
+  // death cross
+  const deathCross = new Decision(sma100, sma50, (a, b) => a > b);
+
+  return [goldenCross, deathCross]
+}
+
+let fullSim = () => {
+  const candles = new CoinbaseProSimulation();
+  return transact(algo(candles), candles);
+}
+
+let paperTrade = () => {
+  console.log('papertrading not implemented');
+}
+
+
+
+if (process.argv.length <= 2) {
+  // no file provided
+  const candles = new CoinbaseProCandle();
+
+  candles.open().subscribe(log('open'));
+
+  candles.high().subscribe(log('high'));
+  candles.low().subscribe(log('low'));
+
+  candles.close().subscribe(log('close'));
+
+  const price = new CoinbaseProPrice();
+  price.subscribe(log('price'));
+} else if (process.argv.findIndex((val) => val === '-s') !== -1) {
+  const RUN_SIMS = 100;
+  const sims = [];
+
+  for (let i=0; i< RUN_SIMS; i++) {
+    sims.push(fullSim());
+  }
+
+  forkJoin(sims).subscribe(() => {
+    console.log(`\nGot ${totalCash/RUN_SIMS} in the bank`);
+    console.log(`would have ${totalExpected/RUN_SIMS} in the bank if I just held`);
+
+    const expectedProfit = ((totalExpected/RUN_SIMS) - 1000)/10;
+    const profit = ((totalCash/RUN_SIMS) - 1000)/10;
+    const diffProfit = profit - expectedProfit;
+    console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${diffProfit.toFixed(2)}% profit over replacement.`);
+  });
+} else if (process.argv.findIndex((val) => val === '-s') !== -1) {
+  paperTrade();
+} else {
+  console.log('unsupported');
+}
