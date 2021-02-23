@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, zip } from 'rxjs';
-import { map, pluck } from 'rxjs/operators';
+import { map, pluck, skip } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 
@@ -65,7 +65,7 @@ export class Price extends Subject<number> {
       return (values.reduce((a, b) => a + b, 0) / values.length);
     });
 
-    return this.pipe(reducer);
+    return this.pipe(reducer, skip(period));
   }
 
   unsubscribe() {

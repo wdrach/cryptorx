@@ -1,4 +1,5 @@
 import { forkJoin, Observable, zip } from 'rxjs';
+import { skip } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log } from './lib/lib';
 
 const COINBASE_TRANSACTION_FEE = .005;
@@ -49,17 +50,71 @@ function transact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   return candles;
 }
 
+function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
+  const buySignal = signals[0];
+  const sellSignal = signals[1];
+
+  let price = 0;
+  candles.close().pipe(skip(300)).subscribe((val) => price = val);
+
+  let firstPrice = 0;
+
+  let dollars = 1000;
+  let btc = 0;
+
+  zip(buySignal, sellSignal)
+  .subscribe(([sell, buy]) => {
+    // if there's no price, we're still in pre-data, not live data
+    if (!price) return;
+
+    // Set the first price to determine our hodl profits
+    if (!firstPrice) firstPrice = price;
+
+    if (sell && btc) {
+      const fee = price*btc*COINBASE_TRANSACTION_FEE;
+      dollars = price*btc - fee;
+
+      console.log('================================================');
+      console.log('SELL SELL SELL!');
+      console.log(`Sold ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
+      console.log(`Fees were \$${fee.toFixed(2)} for a net of \$${dollars.toFixed(2)}`);
+      console.log('------------------------------------------------');
+      const profit = ((dollars - 1000)/10);
+      const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
+      console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
+      console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
+      console.log(`That's a profit over replacement of ${expectedProfit - profit}%`);
+      console.log('================================================');
+
+      btc = 0;
+    } else if (buy && dollars) {
+      const fee = dollars*COINBASE_TRANSACTION_FEE;
+      btc = (dollars - fee)/price;
+
+      console.log('================================================');
+      console.log('BUY BUY BUY!');
+      console.log(`Bought ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
+      console.log(`Fees were ${fee.toFixed(2)} for a net cost of \$${dollars.toFixed(2)}`);
+      console.log('================================================');
+
+      dollars = 0;
+    }
+  })
+
+  return candles;
+}
+
 let algo = (candles: CoinbaseProCandle) => {
-  const sma100 = candles.close().sma(200);
-  const sma50 = candles.close().sma(100);
+  const sma15 = candles.close().sma(15);
+  const sma50 = candles.close().sma(50);
 
   // golden cross
-  const goldenCross = new Decision(sma100, sma50, (a, b) => a < b);
+  const goldenCross = new Decision(sma50, sma15, (a, b) => a < b);
 
   // death cross
-  const deathCross = new Decision(sma100, sma50, (a, b) => a > b);
+  const deathCross = new Decision(sma50, sma15, (a, b) => a > b);
 
-  return [goldenCross, deathCross]
+  return [goldenCross, deathCross];
 }
 
 let fullSim = () => {
@@ -68,7 +123,8 @@ let fullSim = () => {
 }
 
 let paperTrade = () => {
-  console.log('papertrading not implemented');
+  const candles = new CoinbaseProCandle();
+  paperTransact(algo(candles), candles);
 }
 
 
@@ -104,7 +160,7 @@ if (process.argv.length <= 2) {
     console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${diffProfit.toFixed(2)}% profit over replacement.`);
     console.log(`you made ${(totalTrades/RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(totalFees/totalTrades).toFixed(2)} and a total of ${(totalFees/RUN_SIMS).toFixed(2)}`)
   });
-} else if (process.argv.findIndex((val) => val === '-s') !== -1) {
+} else if (process.argv.findIndex((val) => val === '-p') !== -1) {
   paperTrade();
 } else {
   console.log('unsupported');
