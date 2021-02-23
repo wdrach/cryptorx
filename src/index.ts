@@ -1,5 +1,4 @@
 import { forkJoin, Observable, zip } from 'rxjs';
-import { skip } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log } from './lib/lib';
 
 const COINBASE_TRANSACTION_FEE = .005;
@@ -22,7 +21,7 @@ function transact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   let btc = 0;
 
   zip(buySignal, sellSignal)
-  .subscribe(([sell, buy]) => {
+  .subscribe(([buy, sell]) => {
     if (!firstPrice) firstPrice = price;
 
     if (sell && btc) {
@@ -50,12 +49,12 @@ function transact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   return candles;
 }
 
-function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
+function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle, priceStream: CoinbaseProPrice) {
   const buySignal = signals[0];
   const sellSignal = signals[1];
 
   let price = 0;
-  candles.close().pipe(skip(300)).subscribe((val) => price = val);
+  let ready = false;
 
   let firstPrice = 0;
 
@@ -64,8 +63,8 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
 
   zip(buySignal, sellSignal)
   .subscribe(([sell, buy]) => {
-    // if there's no price, we're still in pre-data, not live data
-    if (!price) return;
+    // if we're not ready, we're still in pre-data, not live data
+    if (!ready) return;
 
     // Set the first price to determine our hodl profits
     if (!firstPrice) firstPrice = price;
@@ -83,7 +82,7 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
       const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
       console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
       console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
-      console.log(`That's a profit over replacement of ${expectedProfit - profit}%`);
+      console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
       console.log('================================================');
 
       btc = 0;
@@ -99,6 +98,23 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
 
       dollars = 0;
     }
+  })
+
+  candles.ready().subscribe((val) => {
+    ready = val
+  });
+  priceStream.subscribe((val) => {
+    price = val
+  });
+
+  zip(candles.close(), buySignal, sellSignal).subscribe(([p, b, s]) => {
+    console.log('=========');
+    console.log(`Current Price: ${price}`);
+    console.log(`Closing Price: ${p}`);
+    console.log(`Buy: ${b}`);
+    console.log(`Sell: ${s}`);
+    console.log(`Ready: ${ready}`)
+    console.log('=========');
   })
 
   return candles;
@@ -123,8 +139,9 @@ let fullSim = () => {
 }
 
 let paperTrade = () => {
-  const candles = new CoinbaseProCandle();
-  paperTransact(algo(candles), candles);
+  const candles = new CoinbaseProCandle('BTC-USD', 100);
+  const price = new CoinbaseProPrice();
+  paperTransact(algo(candles), candles, price);
 }
 
 

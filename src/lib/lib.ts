@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, zip } from 'rxjs';
-import { map, pluck, skip } from 'rxjs/operators';
+import { first, map, pluck, skip } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 
@@ -154,6 +154,7 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
 
 export class CoinbaseProCandle extends Subject<Candle> {
   _timeout: NodeJS.Timeout | undefined;
+  _prefetch: number;
 
   /**
    * Constructs and prefetches a Subject of historical CoinbaseProCandles
@@ -165,6 +166,7 @@ export class CoinbaseProCandle extends Subject<Candle> {
    */
   constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60, timestamp?: number) {
     super();
+    this._prefetch = prefetch;
 
     let startTime = timestamp || (Date.now() - (prefetch * period * 1000));
     let endTime = timestamp ? timestamp + (prefetch * period * 1000) : undefined;
@@ -228,6 +230,10 @@ export class CoinbaseProCandle extends Subject<Candle> {
 
   volume(): Observable<number> {
     return this.pipe(pluck('volume'));
+  }
+
+  ready(): Observable<boolean> {
+    return this.pipe(skip(this._prefetch), first(), map(() => true));
   }
 
   unsubscribe() {
