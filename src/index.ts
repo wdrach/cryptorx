@@ -81,6 +81,8 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
       lastTransaction = new Date(Date.now());
       transactions++;
 
+      lastFee = fee;
+      fees += fee;
       btc = 0;
     } else if (buy && dollars) {
       const fee = dollars*COINBASE_TRANSACTION_FEE;
