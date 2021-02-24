@@ -1,5 +1,5 @@
 
-import { Observable, Subject, Subscription, zip } from 'rxjs';
+import { Observable, Subject, Subscription, combineLatest } from 'rxjs';
 import { first, map, pluck, skip } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
@@ -121,10 +121,10 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
   const endDate = new Date(current);
   const endStr = endDate.toISOString();
 
-  // bump cur by 1 more minute before updating so we don't overlap that minute
-  current += 60*1000;
+  // bump cur by 1 more candle before updating so we don't overlap that minute
+  current += period*1000;
 
-  const query = 'start=' + startStr + '&end=' + endStr;
+  const query = 'start=' + startStr + '&end=' + endStr + '&granularity=' + period;
 
   let data;
 
@@ -198,11 +198,14 @@ export class CoinbaseProCandle extends Subject<Candle> {
 
         this._timeout = setInterval(async () => {
           const intervalCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
-          for (let candle of intervalCandles) {
-            this.next(candle);
+
+          if (intervalCandles.length) {
+            for (let candle of intervalCandles) {
+              this.next(candle);
+            }
+    
+            lastTimestamp = intervalCandles[intervalCandles.length - 1].time;
           }
-  
-          lastTimestamp = intervalCandles[intervalCandles.length - 1].time;
         }, 1000 * period)
       }, 1000 * delay)
     });
@@ -264,7 +267,7 @@ export class Decision<T> extends Subject<boolean> {
   constructor(a: Observable<T>, b: Observable<T>, operator: (valA: T, valB: T) => boolean) {
     super();
 
-    this._subscription = zip(a, b).pipe(map(([mapValA, mapValB]) => operator(mapValA, mapValB))).subscribe((decision: boolean) => {
+    this._subscription = combineLatest([a, b]).pipe(map(([mapValA, mapValB]) => operator(mapValA, mapValB))).subscribe((decision: boolean) => {
       this.next(decision);
     });
   }

@@ -1,4 +1,4 @@
-import { forkJoin, Observable, zip } from 'rxjs';
+import { forkJoin, Observable, combineLatest } from 'rxjs';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log } from './lib/lib';
 
 const COINBASE_TRANSACTION_FEE = .005;
@@ -20,7 +20,7 @@ function transact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   let dollars = 1000;
   let btc = 0;
 
-  zip(buySignal, sellSignal)
+  combineLatest([buySignal, sellSignal])
   .subscribe(([buy, sell]) => {
     if (!firstPrice) firstPrice = price;
 
@@ -60,8 +60,12 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
 
   let dollars = 1000;
   let btc = 0;
+  let lastFee = 0;
+  let fees = 0;
+  let transactions = 0;
+  let lastTransaction = new Date(Date.now());
 
-  zip(buySignal, sellSignal)
+  combineLatest([buySignal, sellSignal])
   .subscribe(([sell, buy]) => {
     // if we're not ready, we're still in pre-data, not live data
     if (!ready) return;
@@ -73,29 +77,20 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
       const fee = price*btc*COINBASE_TRANSACTION_FEE;
       dollars = price*btc - fee;
 
-      console.log('================================================');
-      console.log('SELL SELL SELL!');
-      console.log(`Sold ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
-      console.log(`Fees were \$${fee.toFixed(2)} for a net of \$${dollars.toFixed(2)}`);
-      console.log('------------------------------------------------');
-      const profit = ((dollars - 1000)/10);
-      const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
-      console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
-      console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
-      console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
-      console.log('================================================');
+
+      lastTransaction = new Date(Date.now());
+      transactions++;
 
       btc = 0;
     } else if (buy && dollars) {
       const fee = dollars*COINBASE_TRANSACTION_FEE;
       btc = (dollars - fee)/price;
 
-      console.log('================================================');
-      console.log('BUY BUY BUY!');
-      console.log(`Bought ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
-      console.log(`Fees were ${fee.toFixed(2)} for a net cost of \$${dollars.toFixed(2)}`);
-      console.log('================================================');
+      lastTransaction = new Date(Date.now());
+      transactions++;
 
+      lastFee = fee;
+      fees += fee;
       dollars = 0;
     }
   })
@@ -107,14 +102,43 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
     price = val
   });
 
-  zip(candles.close(), buySignal, sellSignal).subscribe(([p, b, s]) => {
-    console.log('=========');
+  combineLatest([candles.time(), candles.close(), buySignal, sellSignal]).subscribe(([t, p, b, s]) => {
+    console.clear();
+    console.log(`Time: ${(new Date(t * 1000)).toLocaleString()}`);
     console.log(`Current Price: ${price}`);
-    console.log(`Closing Price: ${p}`);
-    console.log(`Buy: ${b}`);
-    console.log(`Sell: ${s}`);
-    console.log(`Ready: ${ready}`)
-    console.log('=========');
+    console.log(`${btc}BTC`);
+    console.log(`\$${dollars}`);
+
+    if (transactions > 0) {
+      console.log('--------------------------------------------------------------------');
+      if (dollars) {
+        console.log(`Sold at ${lastTransaction.toLocaleString()}`)
+        console.log('--------------------------------------------------------------------');
+        console.log(`Sold ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
+        console.log(`Fees were \$${lastFee.toFixed(2)} for a net of \$${dollars.toFixed(2)}`);
+        console.log('--------------------------------------------------------------------');
+        const profit = ((dollars - 1000)/10);
+        const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
+        console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
+        console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
+        console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
+        console.log('--------------------------------------------------------------------');
+        console.log(`In total, \$${fees} in fees has been paid on ${transactions} transactions`);
+      } else if (btc) {
+        console.log(`Bought at ${lastTransaction.toLocaleString()}`);
+        console.log('--------------------------------------------------------------------');
+        console.log(`Bought ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
+        console.log(`Fees were ${lastFee.toFixed(2)} for a net cost of \$${dollars.toFixed(2)}`);
+        console.log('--------------------------------------------------------------------');
+        const profit = ((btc*price - 1000)/10);
+        const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
+        console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
+        console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
+        console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
+        console.log('--------------------------------------------------------------------');
+        console.log(`In total, \$${fees} in fees has been paid on ${transactions} transactions`);
+      }
+    }
   })
 
   return candles;
