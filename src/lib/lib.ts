@@ -3,6 +3,7 @@ import { Observable, Subject, Subscription, combineLatest } from 'rxjs';
 import { first, map, pluck, skip } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
+import { appendFile, fstat, writeFile } from 'fs';
 
 // TODO - this should be all products
 // https://api.pro.coinbase.com/products
@@ -276,6 +277,23 @@ export class Decision<T> extends Subject<boolean> {
     this._subscription.unsubscribe();
     super.unsubscribe();
   }
+}
+
+export function writeState(values: Record<string, Observable<any>>, writeObs: Observable<any>, filename: string) {
+  const state: Record<string, any> = {};
+
+  for (let key in values) {
+    state[key] = '';
+    values[key].subscribe((val) => state[key] = val);
+  }
+
+  let keys = Object.keys(state);
+
+  writeFile(filename, keys.join(',') + '\n', () => {
+    writeObs.subscribe(() => {
+      appendFile(filename, keys.map((key) => state[key] || '').join(',') + '\n', () => {})
+    })
+  });
 }
 
 export function log(type: string): (val: any) => void {

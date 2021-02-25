@@ -1,5 +1,6 @@
-import { forkJoin, Observable, combineLatest } from 'rxjs';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log } from './lib/lib';
+import { stat } from 'fs';
+import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState } from './lib/lib';
 
 const COINBASE_TRANSACTION_FEE = .005;
 
@@ -49,9 +50,20 @@ function transact(signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   return candles;
 }
 
-function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle, priceStream: CoinbaseProPrice) {
+let state: Record<string, Observable<any>> = {};
+
+function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle, priceStream: CoinbaseProPrice, filename?: string) {
+  state.time = candles.time();
+  state.high = candles.high();
+  state.low = candles.low();
+  state.open = candles.open();
+  state.close = candles.close();
+  state.price = priceStream;
+
   const buySignal = signals[0];
   const sellSignal = signals[1];
+  state.buy = buySignal;
+  state.sell = sellSignal;
 
   let price = 0;
   let ready = false;
@@ -62,8 +74,14 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
   let btc = 0;
   let lastFee = 0;
   let fees = 0;
-  let transactions = 0;
+  let transactions: Date[] = [];
   let lastTransaction = new Date(Date.now());
+  let transactionSub = new Subject<string>();
+
+  let btcSub = new Subject<number>();
+  let dolSub = new Subject<number>();
+  state.btc = btcSub;
+  state.dollars = dolSub;
 
   combineLatest([buySignal, sellSignal])
   .subscribe(([sell, buy]) => {
@@ -79,21 +97,31 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
 
 
       lastTransaction = new Date(Date.now());
-      transactions++;
+      transactions.push(lastTransaction);
+      transactionSub.next(lastTransaction.toLocaleString());
 
       lastFee = fee;
       fees += fee;
+      btcSub.next(0);
+      dolSub.next(dollars);
       btc = 0;
     } else if (buy && dollars) {
       const fee = dollars*COINBASE_TRANSACTION_FEE;
       btc = (dollars - fee)/price;
 
       lastTransaction = new Date(Date.now());
-      transactions++;
+      transactions.push(lastTransaction);
+      transactionSub.next(lastTransaction.toLocaleString());
 
       lastFee = fee;
       fees += fee;
+      dolSub.next(0);
+      btcSub.next(btc);
       dollars = 0;
+    }
+
+    if (transactions.length > 10) {
+      transactions.shift();
     }
   })
 
@@ -104,14 +132,14 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
     price = val
   });
 
-  combineLatest([candles.time(), candles.close(), buySignal, sellSignal]).subscribe(([t, p, b, s]) => {
+  combineLatest([candles.time()]).subscribe(([t]) => {
     console.clear();
     console.log(`Time: ${(new Date(t * 1000)).toLocaleString()}`);
     console.log(`Current Price: ${price}`);
     console.log(`${btc}BTC`);
     console.log(`\$${dollars}`);
 
-    if (transactions > 0) {
+    if (transactions.length > 0) {
       console.log('--------------------------------------------------------------------');
       if (dollars) {
         console.log(`Sold at ${lastTransaction.toLocaleString()}`)
@@ -124,8 +152,6 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
         console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
         console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
         console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
-        console.log('--------------------------------------------------------------------');
-        console.log(`In total, \$${fees} in fees has been paid on ${transactions} transactions`);
       } else if (btc) {
         console.log(`Bought at ${lastTransaction.toLocaleString()}`);
         console.log('--------------------------------------------------------------------');
@@ -137,11 +163,21 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
         console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
         console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
         console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
-        console.log('--------------------------------------------------------------------');
-        console.log(`In total, \$${fees} in fees has been paid on ${transactions} transactions`);
+      }
+
+      console.log('--------------------------------------------------------------------');
+      console.log(`In total, \$${fees} in fees has been paid on ${transactions.length} transactions`);
+      console.log('--------------------------------------------------------------------');
+      console.log('Transactions:');
+
+      for (let transaction of transactions) {
+        console.log(transaction.toLocaleString());
       }
     }
   })
+
+  writeState(state, candles.time(), `${filename}.csv`);
+  writeState({transactions: transactionSub}, transactionSub, `${filename}.transactions.csv`);
 
   return candles;
 }
@@ -149,6 +185,9 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
 let algo = (candles: CoinbaseProCandle) => {
   const sma15 = candles.close().sma(15);
   const sma50 = candles.close().sma(50);
+
+  state.sma15 = sma15;
+  state.sma50 = sma50;
 
   // golden cross
   const goldenCross = new Decision(sma50, sma15, (a, b) => a < b);
@@ -164,10 +203,10 @@ let fullSim = () => {
   return transact(algo(candles), candles);
 }
 
-let paperTrade = () => {
+let paperTrade = (filename?: string) => {
   const candles = new CoinbaseProCandle('BTC-USD', 100);
   const price = new CoinbaseProPrice();
-  paperTransact(algo(candles), candles, price);
+  paperTransact(algo(candles), candles, price, filename);
 }
 
 
@@ -204,7 +243,12 @@ if (process.argv.length <= 2) {
     console.log(`you made ${(totalTrades/RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(totalFees/totalTrades).toFixed(2)} and a total of ${(totalFees/RUN_SIMS).toFixed(2)}`)
   });
 } else if (process.argv.findIndex((val) => val === '-p') !== -1) {
-  paperTrade();
+  let filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;
+  if (filenameIndex && filenameIndex < process.argv.length) {
+    paperTrade(process.argv[filenameIndex]);
+  } else {
+    paperTrade();
+  }
 } else {
   console.log('unsupported');
 }
