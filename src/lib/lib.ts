@@ -250,7 +250,7 @@ export class CoinbaseProCandle extends Subject<Candle> {
 }
 
 export class CoinbaseProSimulation extends CoinbaseProCandle {
-  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 2400, period: CoinbaseGranularity = 60) {
+  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 6000, period: CoinbaseGranularity = 60) {
     let last = Date.now() - (prefetch * period * 1000);
     if (last < COINBASE_EARLIEST_TIMESTAMP) {
       last = COINBASE_EARLIEST_TIMESTAMP;
@@ -298,4 +298,72 @@ export function writeState(values: Record<string, Observable<any>>, writeObs: Ob
 
 export function log(type: string): (val: any) => void {
   return (val: any) => console.log(`${type}: ${val}`);
+}
+
+export class SimulationWallet {
+  dollars: number = 1000;
+  startingDollars: number = 1000;
+  coin: number = 0;
+  startingPrice: number = 0;
+  endingPrice: number = 0;
+  fees: number = 0;
+  transactions: number = 0;
+  transactionFee: number = .005;
+
+  constuctor(startingCash: number = 1000, fee: number = .005) {
+    this.dollars = startingCash;
+    this.transactionFee = fee;
+    this.startingDollars = this.dollars;
+  }
+
+  _transact(fee: number, price: number) {
+    this.fees += fee;
+    this.transactions++;
+    
+    if (!this.startingPrice) {
+      this.startingPrice = price;
+    }
+    this.endingPrice = price;
+  }
+  buy(price: number) {
+    if (!this.dollars) return;
+
+    let fee = this.transactionFee * this.dollars;
+    this.coin = (this.dollars - fee) / price;
+    this.dollars = 0;
+
+    this._transact(fee, price);
+  }
+
+  sell(price: number) {
+    if (!this.coin) return;
+
+    let fee = this.transactionFee*price*this.coin;
+    this.dollars = (this.coin * price) - fee;
+    this.coin = 0;
+
+    this._transact(fee, price);
+  }
+
+  get expected(): number {
+    const entryFee = this.startingDollars * this.transactionFee;
+    const entryCoin = (this.startingDollars - entryFee) / this.startingPrice;
+    return (this.endingPrice * entryCoin) * (1 - this.transactionFee);
+  }
+  get netWorth(): number {
+    return this.dollars || (this.coin * this.endingPrice * (1 - this.transactionFee));
+  }
+
+  get profit(): number {
+    return 100 * (this.netWorth - this.startingDollars)/this.startingDollars;
+  }
+
+  get expectedProfit(): number {
+    return 100 * (this.expected - this.startingDollars)/this.startingDollars;
+  }
+
+  get profitOverReplacement(): number {
+    return this.profit - this.expectedProfit;
+  }
+
 }
