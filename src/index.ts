@@ -1,4 +1,5 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet } from './lib/lib';
 
 const COINBASE_TRANSACTION_FEE = .005;
@@ -27,6 +28,11 @@ function transact(wallet: SimulationWallet, signals: Observable<boolean>[], cand
 let state: Record<string, Observable<any>> = {};
 
 function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle, priceStream: CoinbaseProPrice, filename?: string) {
+  const wallet = new SimulationWallet();
+  state.coin = wallet.coinStream;
+  state.dollars = wallet.dollarStream;
+  state.transaction = wallet.transactionStream.pipe(map((val) => val.toLocaleString()));
+
   state.time = candles.time();
   state.high = candles.high();
   state.low = candles.low();
@@ -42,61 +48,12 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
   let price = 0;
   let ready = false;
 
-  let firstPrice = 0;
-
-  let dollars = 1000;
-  let btc = 0;
-  let lastFee = 0;
-  let fees = 0;
-  let transactions: Date[] = [];
-  let lastTransaction = new Date(Date.now());
-  let transactionSub = new Subject<string>();
-
-  let btcSub = new Subject<number>();
-  let dolSub = new Subject<number>();
-  state.btc = btcSub;
-  state.dollars = dolSub;
-
-  combineLatest([buySignal, sellSignal])
-  .subscribe(([sell, buy]) => {
+  combineLatest([buySignal, sellSignal]).subscribe(([sell, buy]) => {
     // if we're not ready, we're still in pre-data, not live data
-    if (!ready) return;
+    if (!ready || sell === buy) return;
 
-    // Set the first price to determine our hodl profits
-    if (!firstPrice) firstPrice = price;
-
-    if (sell && btc) {
-      const fee = price*btc*COINBASE_TRANSACTION_FEE;
-      dollars = price*btc - fee;
-
-
-      lastTransaction = new Date(Date.now());
-      transactions.push(lastTransaction);
-      transactionSub.next(lastTransaction.toLocaleString());
-
-      lastFee = fee;
-      fees += fee;
-      btcSub.next(0);
-      dolSub.next(dollars);
-      btc = 0;
-    } else if (buy && dollars) {
-      const fee = dollars*COINBASE_TRANSACTION_FEE;
-      btc = (dollars - fee)/price;
-
-      lastTransaction = new Date(Date.now());
-      transactions.push(lastTransaction);
-      transactionSub.next(lastTransaction.toLocaleString());
-
-      lastFee = fee;
-      fees += fee;
-      dolSub.next(0);
-      btcSub.next(btc);
-      dollars = 0;
-    }
-
-    if (transactions.length > 10) {
-      transactions.shift();
-    }
+    if (sell) wallet.sell(price);
+    else if (buy) wallet.buy(price);
   })
 
   candles.ready().subscribe((val) => {
@@ -110,48 +67,46 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
     console.clear();
     console.log(`Time: ${(new Date(t * 1000)).toLocaleString()}`);
     console.log(`Current Price: ${price}`);
-    console.log(`${btc}BTC`);
-    console.log(`\$${dollars}`);
+    console.log(`${wallet.coin}BTC`);
+    console.log(`\$${wallet.dollars}`);
 
-    if (transactions.length > 0) {
+    if (wallet.transactions > 0) {
       console.log('--------------------------------------------------------------------');
-      if (dollars) {
-        console.log(`Sold at ${lastTransaction.toLocaleString()}`)
+      if (wallet.dollars) {
+        console.log(`Sold at ${wallet.lastTransaction.toLocaleString()}`)
         console.log('--------------------------------------------------------------------');
-        console.log(`Sold ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
-        console.log(`Fees were \$${lastFee.toFixed(2)} for a net of \$${dollars.toFixed(2)}`);
+        console.log(`Sold ${wallet.coin.toFixed(4)}BTC at \$${wallet.lastTransactionPrice.toFixed(2)}`);
+        console.log(`Fees were \$${wallet.lastFee.toFixed(2)} for a net of \$${wallet.dollars.toFixed(2)}`);
         console.log('--------------------------------------------------------------------');
-        const profit = ((dollars - 1000)/10);
-        const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
-        console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
-        console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
-        console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
-      } else if (btc) {
-        console.log(`Bought at ${lastTransaction.toLocaleString()}`);
+        console.log(`Right now you have a profit of ${wallet.profit.toFixed(2)}%.`);
+        console.log(`If you would have held, you'd have a profit of ${wallet.expectedProfit.toFixed(2)}%.`)
+        console.log(`That's a profit over replacement of ${wallet.profitOverReplacement.toFixed(2)}%`);
+      } else if (wallet.coin) {
+        console.log(`Bought at ${wallet.lastTransaction.toLocaleString()}`);
         console.log('--------------------------------------------------------------------');
-        console.log(`Bought ${btc.toFixed(4)}BTC at \$${price.toFixed(2)}`);
-        console.log(`Fees were ${lastFee.toFixed(2)} for a net cost of \$${dollars.toFixed(2)}`);
+        console.log(`Bought ${wallet.coin.toFixed(4)}BTC at \$${wallet.lastTransactionPrice.toFixed(2)}`);
+        console.log(`Fees were ${wallet.lastFee.toFixed(2)} for a net cost of \$${wallet.dollars.toFixed(2)}`);
         console.log('--------------------------------------------------------------------');
-        const profit = ((btc*price - 1000)/10);
-        const expectedProfit = (((1000/firstPrice)*price - 1000)/10);
-        console.log(`Right now you have a profit of ${profit.toFixed(2)}%.`);
-        console.log(`If you would have held, you'd have a profit of ${expectedProfit.toFixed(2)}%.`)
-        console.log(`That's a profit over replacement of ${(profit - expectedProfit).toFixed(2)}%`);
+        console.log(`Right now you have a profit of ${wallet.profit.toFixed(2)}%.`);
+        console.log(`If you would have held, you'd have a profit of ${wallet.expectedProfit.toFixed(2)}%.`)
+        console.log(`That's a profit over replacement of ${wallet.profitOverReplacement.toFixed(2)}%`);
       }
 
       console.log('--------------------------------------------------------------------');
-      console.log(`In total, \$${fees} in fees has been paid on ${transactions.length} transactions`);
+      console.log(`In total, \$${wallet.fees} in fees has been paid on ${wallet.transactions} transactions`);
       console.log('--------------------------------------------------------------------');
       console.log('Transactions:');
 
-      for (let transaction of transactions) {
+      for (let transaction of wallet.lastTransactions) {
         console.log(transaction.toLocaleString());
       }
     }
   })
 
-  writeState(state, candles.time(), `${filename}.csv`);
-  writeState({transactions: transactionSub}, transactionSub, `${filename}.transactions.csv`);
+  if (filename) {
+    writeState(state, candles.time(), `${filename}.csv`);
+    writeState({transactions: state.transactions}, state.transactions, `${filename}.transactions.csv`);
+  }
 
   return candles;
 }

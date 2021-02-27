@@ -302,12 +302,19 @@ export function log(type: string): (val: any) => void {
 
 export class SimulationWallet {
   dollars: number = 1000;
+  dollarStream = new Subject<number>();
   startingDollars: number = 1000;
   coin: number = 0;
+  coinStream = new Subject<number>();
   startingPrice: number = 0;
   endingPrice: number = 0;
+  lastTransactionPrice: number = 0;
   fees: number = 0;
+  lastFee: number = 0;
   transactions: number = 0;
+  transactionStream = new Subject<Date>();
+  lastTransaction: Date = new Date(Date.now());
+  lastTransactions: Date[] = [];
   transactionFee: number = .005;
 
   constuctor(startingCash: number = 1000, fee: number = .005) {
@@ -318,12 +325,24 @@ export class SimulationWallet {
 
   _transact(fee: number, price: number) {
     this.fees += fee;
+    this.lastFee = fee;
     this.transactions++;
+    this.lastTransaction = new Date(Date.now());
+    this.lastTransactions.push(this.lastTransaction);
+
+    if (this.lastTransactions.length > 10) {
+      this.lastTransactions.shift();
+    }
+
+    this.transactionStream.next(this.lastTransaction);
+    this.dollarStream.next(this.dollars);
+    this.coinStream.next(this.coin);
     
     if (!this.startingPrice) {
       this.startingPrice = price;
     }
     this.endingPrice = price;
+    this.lastTransactionPrice = price;
   }
   buy(price: number) {
     if (!this.dollars) return;
@@ -331,6 +350,7 @@ export class SimulationWallet {
     let fee = this.transactionFee * this.dollars;
     this.coin = (this.dollars - fee) / price;
     this.dollars = 0;
+
 
     this._transact(fee, price);
   }
