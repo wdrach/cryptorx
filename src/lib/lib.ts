@@ -12,6 +12,7 @@ export type CoinbaseGranularity = 60 | 300 | 900 | 3600 | 21600 | 86400;
 
 const COINBASE_API = 'https://api.pro.coinbase.com';
 export const COINBASE_EARLIEST_TIMESTAMP = 1437428220000;
+const COINBASE_TRANSACTION_FEE = .005;
 
 export class Candle {
   time: number;
@@ -56,7 +57,7 @@ export class Price extends Subject<number> {
     }
   }
 
-  sma(period: number): Observable<number> {
+  sma(period: number): Price {
     let values: Array<number> = [];
     const reducer = map((val: number) => {
       if (values.length >= period) {
@@ -66,7 +67,33 @@ export class Price extends Subject<number> {
       return (values.reduce((a, b) => a + b, 0) / values.length);
     });
 
-    return this.pipe(reducer, skip(period));
+    return new Price(this.pipe(reducer, skip(period)));
+  }
+
+  ema(period: number, smoothing?: number): Price {
+    const smoothingConstant = smoothing || 2/(period + 1);
+
+    let currentEma = 0;
+    let values: Array<number> = [];
+    const reducer = map((val: number) => {
+      // no EMA? Start with an SMA
+      if (!currentEma) {
+        values.push(val);
+        const sma = (values.reduce((a, b) => a + b, 0) / values.length);
+
+        if (values.length >= period) {
+          currentEma = sma;
+          values = [];
+        }
+
+        return sma;
+      } else {
+        currentEma = smoothingConstant * (val - currentEma) + val;
+        return currentEma;
+      }
+    });
+
+    return new Price(this.pipe(reducer, skip(period)));
   }
 
   unsubscribe() {
@@ -317,7 +344,7 @@ export class SimulationWallet {
   lastTransactions: Date[] = [];
   transactionFee: number = .005;
 
-  constuctor(startingCash: number = 1000, fee: number = .005) {
+  constuctor(startingCash: number = 1000, fee: number = COINBASE_TRANSACTION_FEE) {
     this.dollars = startingCash;
     this.transactionFee = fee;
     this.startingDollars = this.dollars;

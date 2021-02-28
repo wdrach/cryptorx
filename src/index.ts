@@ -2,8 +2,6 @@ import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet } from './lib/lib';
 
-const COINBASE_TRANSACTION_FEE = .005;
-
 function transact(wallet: SimulationWallet, signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   const buySignal = signals[0];
   const sellSignal = signals[1];
