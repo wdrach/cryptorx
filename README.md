@@ -8,6 +8,11 @@ RxJS + Coinbase Pro/Kraken + Technical Analysis Operators
 
 Hitlist:
  - Weight decisions
- - "Wallet" object w/ mocks instead of the vars
- - CSV output for simulations
  - Real transactions!
+
+
+ ## Notes
+ Lower Bollinger bands - 1 day candle, 20 day period, 2 stddev - appear to be a pretty good buy indicator
+ The upper bands are horrible sell indicators
+
+ Bollinger squeezes do appear to be pretty good indicators of near-future volatility

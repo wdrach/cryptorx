@@ -57,17 +57,30 @@ export class Price extends Subject<number> {
     }
   }
 
+  _sma(period: number, values: number[]): number {
+    return (values.reduce((a, b) => a + b, 0) / values.length)
+  }
+
+  _stddev(sma: number, values: number[]): number {
+    const variance = values.reduce((acc, val) => acc + Math.pow((val - sma), 2), 0) / values.length;
+    return Math.sqrt(variance);
+  }
+
   sma(period: number): Price {
     let values: Array<number> = [];
     const reducer = map((val: number) => {
+      values.push(val);
       if (values.length >= period) {
         values.shift();
       }
-      values.push(val);
-      return (values.reduce((a, b) => a + b, 0) / values.length);
+      return this._sma(period, values);
     });
 
     return new Price(this.pipe(reducer, skip(period)));
+  }
+
+  _ema(currentEma: number, val: number, smoothing: number) {
+    return smoothing * (val - currentEma) + val;
   }
 
   ema(period: number, smoothing?: number): Price {
@@ -79,16 +92,15 @@ export class Price extends Subject<number> {
       // no EMA? Start with an SMA
       if (!currentEma) {
         values.push(val);
-        const sma = (values.reduce((a, b) => a + b, 0) / values.length);
-
-        if (values.length >= period) {
-          currentEma = sma;
+        if (values.length >= (period - 1)) {
+          currentEma = this._sma(period, values);
           values = [];
+          return currentEma;
         }
 
-        return sma;
+        return this._sma(period, values);
       } else {
-        currentEma = smoothingConstant * (val - currentEma) + val;
+        currentEma = this._ema(currentEma, val, smoothingConstant);
         return currentEma;
       }
     });
@@ -96,11 +108,63 @@ export class Price extends Subject<number> {
     return new Price(this.pipe(reducer, skip(period)));
   }
 
-  unsubscribe() {
+  _bollingerBand(upper: boolean, ma: number, deviations: number, stddev: number) {
+    return upper ? (ma + (deviations * stddev)) : (ma - (deviations * stddev));
+  }
+
+  bollingerBand(upper: boolean = true, period: number = 20, deviations: number = 2) {
+    let values: Array<number> = [];
+    const reducer = map((val: number) => {
+      const len = values.length;
+      values.push(val);
+      if (len >= period) {
+        values.shift();
+      }
+
+      const sma = this._sma(period, values);
+      const stddev = this._stddev(sma, values);
+
+      return this._bollingerBand(upper, sma, deviations, stddev);
+    });
+
+    return new Price(this.pipe(reducer, skip(period)));
+  }
+
+  bollingerBandEma(upper: boolean = true, period: number = 20, deviations: number = 2, smoothing?: number) {
+    const smoothingConstant = smoothing || 2/(period + 1);
+
+    let values: Array<number> = [];
+    let currentEma = 0;
+
+    const reducer = map((val: number) => {
+      let ema = 0;
+      // no EMA? Start with an SMA
+      if (!currentEma) {
+        values.push(val);
+        if (values.length >= (period - 1)) {
+          currentEma = this._sma(period, values);
+          values = [];
+          ema = currentEma;
+        } else {
+          ema = this._sma(period, values);
+        }
+      } else {
+        currentEma = this._ema(currentEma, val, smoothingConstant);
+        ema = currentEma;
+      }
+      const stddev = this._stddev(ema, values);
+
+      return this._bollingerBand(upper, ema, deviations, stddev);
+    });
+
+    return new Price(this.pipe(reducer, skip(period)));
+  }
+
+  complete() {
     if (this._subscription) {
       this._subscription.unsubscribe();
     }
-    super.unsubscribe();
+    super.complete();
   }
 }
 
@@ -259,6 +323,10 @@ export class CoinbaseProCandle extends Subject<Candle> {
     return new Price(this.pipe(pluck('low')));
   }
 
+  typical(): Price {
+    return new Price(this.pipe(map((c: Candle) => (c.high + c.low + c.close)/3)));
+  }
+
   volume(): Observable<number> {
     return this.pipe(pluck('volume'));
   }
@@ -277,15 +345,15 @@ export class CoinbaseProCandle extends Subject<Candle> {
 }
 
 export class CoinbaseProSimulation extends CoinbaseProCandle {
-  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 6000, period: CoinbaseGranularity = 60) {
-    let last = Date.now() - (prefetch * period * 1000);
+  constructor(period: CoinbaseGranularity = 60, time: number = 300, product: CoinbaseProduct = 'BTC-USD') {
+    let last = Date.now() - (time * period * 1000);
     if (last < COINBASE_EARLIEST_TIMESTAMP) {
       last = COINBASE_EARLIEST_TIMESTAMP;
     }
 
     let timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
 
-    super(product, prefetch, period, timestamp);
+    super(product, time, period, timestamp);
   }
 }
 
@@ -300,9 +368,15 @@ export class Decision<T> extends Subject<boolean> {
     });
   }
 
-  unsubscribe() {
+  complete() {
     this._subscription.unsubscribe();
-    super.unsubscribe();
+    super.complete();
+  }
+}
+
+export class Crossover extends Decision<number> {
+  constructor(a: Price, b: Price) {
+    super(a, b, (a, b) => a > b);
   }
 }
 

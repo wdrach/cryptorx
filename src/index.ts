@@ -1,6 +1,7 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet } from './lib/lib';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover } from './lib/lib';
+import { goldenAndDeathCross } from './algs/GoldenAndDeathCross';
 
 function transact(wallet: SimulationWallet, signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   const buySignal = signals[0];
@@ -109,33 +110,11 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
   return candles;
 }
 
-let algo = (candles: CoinbaseProCandle, sma1: number = 15, sma2: number = 50) => {
-  const sma15 = candles.close().sma(sma1);
-  const sma50 = candles.close().sma(sma2);
-
-  state.sma15 = sma15;
-  state.sma50 = sma50;
-
-  // golden cross
-  const goldenCross = new Decision(sma50, sma15, (a, b) => a < b);
-
-  // death cross
-  const deathCross = new Decision(sma50, sma15, (a, b) => a > b);
-
-  return [goldenCross, deathCross];
-}
-
-let fullSim = (wallet: SimulationWallet, candles: CoinbaseProSimulation, sma1: number, sma2: number) => {
-  return transact(wallet, algo(candles, sma1, sma2), candles);
-}
-
 let paperTrade = (filename?: string) => {
   const candles = new CoinbaseProCandle('BTC-USD', 100);
   const price = new CoinbaseProPrice();
-  paperTransact(algo(candles), candles, price, filename);
+  paperTransact(goldenAndDeathCross(candles), candles, price, filename);
 }
-
-
 
 if (process.argv.length <= 2) {
   // no file provided
@@ -151,73 +130,46 @@ if (process.argv.length <= 2) {
   const price = new CoinbaseProPrice();
   price.subscribe(log('price'));
 } else if (process.argv.findIndex((val) => val === '-s') !== -1) {
-  const RUN_SIMS = 50;
-  const iSTART = 900;
-  const jSTART = 2400;
-  const iEND = 1000;
-  const jEND = 2500;
-  const INCREMENT = 100;
-  const simData: CoinbaseProSimulation[] = [];
-  const allSims = [];
+  const RUN_SIMS = 5;
 
-  const simMatrix: {profit: number; profitOverReplacement: number; sim1: number; sim2: number}[] = [];
+  const sims = [];
+  const wallets: SimulationWallet[] = [];
+  for (let i = 0; i < RUN_SIMS; i++) {
+    const wallet = new SimulationWallet();
+    wallets.push(wallet);
+    const sim = new CoinbaseProSimulation(86400, 800);
 
-  for (let i=0; i < RUN_SIMS; i++) {
-    simData.push(new CoinbaseProSimulation());
+    sims.push(transact(wallet, goldenAndDeathCross(sim), sim));
   }
 
-  for (let i = iSTART; i < iEND; i += INCREMENT) {
-    for (let j = jSTART; j < jEND; j += INCREMENT) {
-      console.log(`starting sim ${i}, ${j}`)
-      const theseSims = [];
-      const wallets: SimulationWallet[] = [];
-      for (let ourSimData of simData) {
-        const wallet = new SimulationWallet();
-        let ourSim = fullSim(wallet, ourSimData, i, j);
-        theseSims.push(ourSim);
-        allSims.push(ourSim);
-        wallets.push(wallet);
-      }
+  forkJoin(sims).subscribe(() => {
+    let cash = 0;
+    let expected = 0;
+    let expectedProfit = 0;
+    let profitOverReplacement = 0;
+    let fees = 0;
+    let trades = 0;
+    let profit = 0;
 
-      forkJoin(theseSims).subscribe(() => {
-        let cash = 0;
-        let expected = 0;
-        let expectedProfit = 0;
-        let profitOverReplacement = 0;
-        let fees = 0;
-        let trades = 0;
-        let profit = 0;
-
-        for (let wallet of wallets) {
-          cash += wallet.netWorth;
-          expected += wallet.expected;
-          expectedProfit += wallet.expectedProfit;
-          profit += wallet.profit;
-          profitOverReplacement += wallet.profitOverReplacement;
-          fees += wallet.fees;
-          trades += wallet.transactions;
-        }
-
-        expectedProfit = expectedProfit / RUN_SIMS;
-        profit = profit / RUN_SIMS;
-        profitOverReplacement = profitOverReplacement / RUN_SIMS;
-
-        console.log(`\nGot ${cash} in the bank`);
-        console.log(`would have ${expected} in the bank if I just held`);
-        console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
-        console.log(`you made ${(trades).toFixed(2)} trades, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)}`)
-        simMatrix.push({sim1: i, sim2: j, profitOverReplacement: profitOverReplacement, profit: profit});
-      });
+    for (let wallet of wallets) {
+      cash += wallet.netWorth;
+      expected += wallet.expected;
+      expectedProfit += wallet.expectedProfit;
+      profit += wallet.profit;
+      profitOverReplacement += wallet.profitOverReplacement;
+      fees += wallet.fees;
+      trades += wallet.transactions;
     }
 
-    forkJoin(allSims).subscribe(() => {
-      let winners = simMatrix.filter((val) => val.profit).sort((a, b) => b.profitOverReplacement - a.profitOverReplacement);
+    expectedProfit = expectedProfit / RUN_SIMS;
+    profit = profit / RUN_SIMS;
+    profitOverReplacement = profitOverReplacement / RUN_SIMS;
 
-      for (let winner of winners.slice(0,10)) {
-        console.log(`WINNER: ${winner.sim1}, ${winner.sim2} : ${winner.profitOverReplacement}`);
-      }
-    })
-  }
+    console.log(`\nGot ${cash} in the bank`);
+    console.log(`would have ${expected} in the bank if I just held`);
+    console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
+    console.log(`you made ${(trades).toFixed(2)} trades, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)}`)
+  });
 } else if (process.argv.findIndex((val) => val === '-p') !== -1) {
   let filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;
   if (filenameIndex && filenameIndex < process.argv.length) {
