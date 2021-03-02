@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, combineLatest } from 'rxjs';
-import { first, map, pluck, skip } from 'rxjs/operators';
+import { first, map, pluck, skip, tap } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import { appendFile, fstat, writeFile } from 'fs';
@@ -14,14 +14,22 @@ const COINBASE_API = 'https://api.pro.coinbase.com';
 export const COINBASE_EARLIEST_TIMESTAMP = 1437428220000;
 const COINBASE_TRANSACTION_FEE = .005;
 
+/** A convenience class for working with candle data */
 export class Candle {
+  /** The time (in seconds since epoch) extracted from the candle object */
   time: number;
+
   low: number;
   high: number;
   open: number;
   close: number;
   volume: number;
 
+  /**
+   * Turn a tlhocv array (from the Coinbase Pro API, for example) into an object-like candle
+   * 
+   * @param tlhocv an array of data in the form [ time, low, high, open, close, volume ]
+   */
   constructor(tlhocv: Array<number>) {
     this.time = tlhocv[0];
     this.low = tlhocv[1];
@@ -31,6 +39,7 @@ export class Candle {
     this.volume = tlhocv[5];
   }
 
+  /** Pretty-print the data */
   toString() {
     return `=======================
 time:   ${this.time}
@@ -43,9 +52,16 @@ volume: ${this.volume}
   }
 }
 
+/** A class for handling number streams with a mathematical boost */
 export class Price extends Subject<number> {
   _subscription: Subscription | undefined;
 
+  /**
+   * Create a price stream, either to call next on manually or infer from an input stream
+   * 
+   * @param input if your price stream is coming from somewhere (like a candle stream) you can use input it here.
+   * @param key will perform a 'pluck' on the input if provided
+   */
   constructor(input?: Subject<any> | Observable<any>, key?: string) {
     super();
 
@@ -66,6 +82,11 @@ export class Price extends Subject<number> {
     return Math.sqrt(variance);
   }
 
+  /**
+   * Take the simple moving average over a given period
+   * 
+   * @param period the length of time to take the average for, smoothing constant
+   */
   sma(period: number): Price {
     let values: Array<number> = [];
     const reducer = map((val: number) => {
@@ -83,6 +104,12 @@ export class Price extends Subject<number> {
     return smoothing * (val - currentEma) + val;
   }
 
+  /**
+   * Take the exponential moving average over a given period
+   * 
+   * @param period the length of time to take the average for
+   * @param smoothing the smoothing constant, defaults to 2/(period + 1)
+   */
   ema(period: number, smoothing?: number): Price {
     const smoothingConstant = smoothing || 2/(period + 1);
 
@@ -112,6 +139,13 @@ export class Price extends Subject<number> {
     return upper ? (ma + (deviations * stddev)) : (ma - (deviations * stddev));
   }
 
+  /**
+   * Create a single, simple moving average based Bollinger Band
+   * 
+   * @param upper true for an upper band, false for a lower band
+   * @param period the length of time to take the moving average for
+   * @param deviations the number of standard deviations to offset the band
+   */
   bollingerBand(upper: boolean = true, period: number = 20, deviations: number = 2) {
     let values: Array<number> = [];
     const reducer = map((val: number) => {
@@ -127,9 +161,17 @@ export class Price extends Subject<number> {
       return this._bollingerBand(upper, sma, deviations, stddev);
     });
 
-    return new Price(this.pipe(reducer, skip(period)));
+    return new Price(this.pipe(reducer, skip(period),));
   }
 
+  /**
+   * Create a single, exponential moving average based Bollinger Band
+   * 
+   * @param upper true for an upper band, false for a lower band
+   * @param period the length of time to take the moving average for
+   * @param deviations the number of standard deviations to offset the band
+   * @param smoothing the smoothing constant for the ema, defaults to 2/(period + 1)
+   */
   bollingerBandEma(upper: boolean = true, period: number = 20, deviations: number = 2, smoothing?: number) {
     const smoothingConstant = smoothing || 2/(period + 1);
 
@@ -251,7 +293,7 @@ export class CoinbaseProCandle extends Subject<Candle> {
   /**
    * Constructs and prefetches a Subject of historical CoinbaseProCandles
    * 
-   * @param product A string of the Coinbase product to query for.
+   * @param product A string of the Coinbase product to query for, defaults to 'BTC-USD'
    * @param prefetch The number of candles to prefetch
    * @param period The granularity, in seconds, of how large the candles are
    * @param timestamp For testing & simulation only, use to fetch a set number of historical candles starting at this timestamp
@@ -380,6 +422,12 @@ export class Crossover extends Decision<number> {
   }
 }
 
+export class NegativeCrossover extends Decision<number> {
+  constructor(a: Price, b: Price) {
+    super(a, b, (a, b) => a < b);
+  }
+}
+
 export function writeState(values: Record<string, Observable<any>>, writeObs: Observable<any>, filename: string) {
   const state: Record<string, any> = {};
 
@@ -486,5 +534,4 @@ export class SimulationWallet {
   get profitOverReplacement(): number {
     return this.profit - this.expectedProfit;
   }
-
 }
