@@ -3,6 +3,7 @@ import { map } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover } from './lib/lib';
 import { goldenAndDeathCross } from './algs/GoldenAndDeathCross';
 import { bollingerBands } from './algs/BollingerBands';
+import { stoch } from './algs/Stoch';
 
 function transact(wallet: SimulationWallet, signals: Observable<boolean>[], candles: CoinbaseProCandle) {
   const buySignal = signals[0];
@@ -131,7 +132,7 @@ if (process.argv.length <= 2) {
   const price = new CoinbaseProPrice();
   price.subscribe(log('price'));
 } else if (process.argv.findIndex((val) => val === '-s') !== -1) {
-  const RUN_SIMS = 5;
+  const RUN_SIMS = 100;
 
   const sims = [];
   const wallets: SimulationWallet[] = [];
@@ -140,7 +141,7 @@ if (process.argv.length <= 2) {
     wallets.push(wallet);
     const sim = new CoinbaseProSimulation(86400, 800);
 
-    sims.push(transact(wallet, bollingerBands(sim), sim));
+    sims.push(transact(wallet, stoch(sim), sim));
   }
 
   forkJoin(sims).subscribe(() => {

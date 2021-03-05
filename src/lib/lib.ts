@@ -1,9 +1,9 @@
 
-import { Observable, Subject, Subscription, combineLatest } from 'rxjs';
-import { first, map, pluck, skip, tap } from 'rxjs/operators';
+import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
+import { bufferCount, first, map, pluck, scan, skip, tap } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
-import { appendFile, fstat, writeFile } from 'fs';
+import { appendFile, writeFile } from 'fs';
 
 // TODO - this should be all products
 // https://api.pro.coinbase.com/products
@@ -73,7 +73,7 @@ export class Price extends Subject<number> {
     }
   }
 
-  _sma(period: number, values: number[]): number {
+  _sma(values: number[]): number {
     return (values.reduce((a, b) => a + b, 0) / values.length)
   }
 
@@ -88,16 +88,41 @@ export class Price extends Subject<number> {
    * @param period the length of time to take the average for, smoothing constant
    */
   sma(period: number): Price {
-    let values: Array<number> = [];
-    const reducer = map((val: number) => {
-      values.push(val);
-      if (values.length >= period) {
-        values.shift();
-      }
-      return this._sma(period, values);
+    const reducer = map((values: number[]) => {
+      return this._sma(values);
     });
 
-    return new Price(this.pipe(reducer, skip(period)));
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
+  }
+
+  /** Shorthand for sma(5) */
+  sma5(): Price {
+    return this.sma(5);
+  }
+
+  /** Shorthand for sma(20) */
+  sma20(): Price {
+    return this.sma(20);
+  }
+
+  /** Shorthand for sma(30) */
+  sma30(): Price {
+    return this.sma(30);
+  }
+
+  /** Shorthand for sma(50) */
+  sma50(): Price {
+    return this.sma(50);
+  }
+
+  /** Shorthand for sma(100) */
+  sma100(): Price {
+    return this.sma(100);
+  }
+
+  /** Shorthand for sma(200) */
+  sma200(): Price {
+    return this.sma(200);
   }
 
   _ema(currentEma: number, val: number, smoothing: number) {
@@ -114,25 +139,54 @@ export class Price extends Subject<number> {
     const smoothingConstant = smoothing || 2/(period + 1);
 
     let currentEma = 0;
-    let values: Array<number> = [];
-    const reducer = map((val: number) => {
+    const reducer = map((values: number[]) => {
+      const len = values.length;
+
       // no EMA? Start with an SMA
       if (!currentEma) {
-        values.push(val);
         if (values.length >= (period - 1)) {
-          currentEma = this._sma(period, values);
-          values = [];
+          currentEma = this._sma(values);
           return currentEma;
         }
 
-        return this._sma(period, values);
+        return this._sma(values);
       } else {
-        currentEma = this._ema(currentEma, val, smoothingConstant);
+        currentEma = this._ema(currentEma, values[len - 1], smoothingConstant);
         return currentEma;
       }
     });
 
-    return new Price(this.pipe(reducer, skip(period)));
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
+  }
+
+  /** Shorthand for ema(5) */
+  ema5(): Price {
+    return this.ema(5);
+  }
+
+  /** Shorthand for ema(20) */
+  ema20(): Price {
+    return this.ema(20);
+  }
+
+  /** Shorthand for ema(30) */
+  ema30(): Price {
+    return this.ema(30);
+  }
+
+  /** Shorthand for ema(50) */
+  ema50(): Price {
+    return this.ema(50);
+  }
+
+  /** Shorthand for ema(100) */
+  ema100(): Price {
+    return this.ema(100);
+  }
+
+  /** Shorthand for ema(200) */
+  ema200(): Price {
+    return this.ema(200);
   }
 
   _bollingerBand(upper: boolean, ma: number, deviations: number, stddev: number) {
@@ -148,20 +202,14 @@ export class Price extends Subject<number> {
    */
   bollingerBand(upper: boolean = true, period: number = 20, deviations: number = 2) {
     let values: Array<number> = [];
-    const reducer = map((val: number) => {
-      const len = values.length;
-      values.push(val);
-      if (len >= period) {
-        values.shift();
-      }
-
-      const sma = this._sma(period, values);
+    const reducer = map((values: number[]) => {
+      const sma = this._sma(values);
       const stddev = this._stddev(sma, values);
 
       return this._bollingerBand(upper, sma, deviations, stddev);
     });
 
-    return new Price(this.pipe(reducer, skip(period),));
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
   }
 
   /**
@@ -175,23 +223,21 @@ export class Price extends Subject<number> {
   bollingerBandEma(upper: boolean = true, period: number = 20, deviations: number = 2, smoothing?: number) {
     const smoothingConstant = smoothing || 2/(period + 1);
 
-    let values: Array<number> = [];
     let currentEma = 0;
 
-    const reducer = map((val: number) => {
+    const reducer = map((values: number[]) => {
       let ema = 0;
+      const len = values.length
       // no EMA? Start with an SMA
       if (!currentEma) {
-        values.push(val);
-        if (values.length >= (period - 1)) {
-          currentEma = this._sma(period, values);
-          values = [];
+        if (len >= (period - 1)) {
+          currentEma = this._sma(values);
           ema = currentEma;
         } else {
-          ema = this._sma(period, values);
+          ema = this._sma(values);
         }
       } else {
-        currentEma = this._ema(currentEma, val, smoothingConstant);
+        currentEma = this._ema(currentEma, values[len - 1], smoothingConstant);
         ema = currentEma;
       }
       const stddev = this._stddev(ema, values);
@@ -199,7 +245,44 @@ export class Price extends Subject<number> {
       return this._bollingerBand(upper, ema, deviations, stddev);
     });
 
-    return new Price(this.pipe(reducer, skip(period)));
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
+  }
+
+  /**
+   * Returns a custom MACD indicator for 2 given periods.
+   * Defined as EMA(lowerPeriod) - EMA(upperPeriod)
+   * 
+   * @param lowerPeriod the first, smaller period for the ema
+   * @param upperPeriod the second, larger period for the ema 
+   */
+  macdOf(lowerPeriod: number = 12, upperPeriod: number = 26) {
+    return new Price(zip(this.ema(lowerPeriod), this.ema(upperPeriod)).pipe(map(([ema1, ema2]) => ema1 - ema2)));
+  }
+
+  /**
+   * Returns the MACD indicator, defined as the EMA(12) - EMA(26)
+   */
+  macd(): Price {
+    return this.macdOf();
+  }
+
+  /**
+   * Returns a custom MACD indicator for 2 given periods.
+   * Defined as EMA(MACD(lowerPeriod, upperPeriod), signalPeriod)
+   * 
+   * @param lowerPeriod the first, smaller period for the ema
+   * @param upperPeriod the second, larger period for the ema 
+   * @param signalPeriod the period to base the signal value off of
+   */
+  macdSignalOf(lowerPeriod: number = 12, upperPeriod: number = 26, signalPeriod: number = 9): Price {
+    return this.macdOf(lowerPeriod, upperPeriod).ema(signalPeriod);
+  }
+
+  /**
+   * Returns the MACD signal, defined as EMA(MACD, 9)
+   */
+  macdSignal(): Price {
+    return this.macdSignalOf();
   }
 
   complete() {
@@ -286,7 +369,88 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
   return [];
 }
 
-export class CoinbaseProCandle extends Subject<Candle> {
+export class Candles extends Subject<Candle> {
+  time(): Observable<number> {
+    return this.pipe(pluck('time'))
+  }
+
+  open(): Price {
+    return new Price(this.pipe(pluck('open')));
+  }
+
+  close(): Price {
+    return new Price(this.pipe(pluck('close')));
+  }
+
+  high(): Price {
+    return new Price(this.pipe(pluck('high')));
+  }
+
+  low(): Price {
+    return new Price(this.pipe(pluck('low')));
+  }
+
+  typical(): Price {
+    return new Price(this.pipe(map((c: Candle) => (c.high + c.low + c.close)/3)));
+  }
+
+  volume(): Observable<number> {
+    return this.pipe(pluck('volume'));
+  }
+
+  /**
+   * The stochastic %K, defined as:
+   *  100 * (C - L(P))/(H(P) - L(P))
+   * 
+   * Where L(P) is the low price P periods back
+   * and H(P) is the high price P periods back
+   * 
+   * @param period the period to compare to, default of 14
+   */
+  stoch(period: number = 14): Price {
+    const reducer = map((values: Candle[]) => {
+      const lastValue = values[values.length - 1];
+      const firstValue = values[0];
+
+      return 100 * (lastValue.close - firstValue.low) / (firstValue.high - firstValue.low);
+    });
+
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
+  }
+
+  /**
+   * The stochastic %D, the <avgPeriod> period average of the stochastic %K
+   * 
+   * @param period the period to compare to, default of 14
+   * @param avgPeriod the smoothing factor, default of 3
+   */
+  stochD(period: number = 14, avgPeriod: number = 3): Price {
+    return this.stoch(period).ema(avgPeriod);
+  }
+
+  /**
+   * The stochastic slow %K, defined as the stochastic fast %D
+   * 
+   * @param period the period to compare to, default of 14
+   * @param avgPeriod the smoothing factor, default of 3
+   */
+  stochSlow(period: number = 14, avgPeriod: number = 3): Price {
+    return this.stochD(period, avgPeriod);
+  }
+
+  /**
+   * The stochastic slow %D, applies a second moving average to the stochastic slow %D
+   * 
+   * @param period the period to compare to, default of 14
+   * @param avgPeriod the smoothing factor, default of 3
+   * @param secondAvgPeriod the smoothing factor, default of 3
+   */
+  stochSlowD(period: number = 14, avgPeriod: number = 3, secondAvgPeriod: number = 3): Price {
+    return this.stochSlow(period, avgPeriod).ema(secondAvgPeriod);
+  }
+}
+
+export class CoinbaseProCandle extends Candles {
   _timeout: NodeJS.Timeout | undefined;
   _prefetch: number;
 
@@ -345,33 +509,6 @@ export class CoinbaseProCandle extends Subject<Candle> {
     });
   }
 
-  time(): Observable<number> {
-    return this.pipe(pluck('time'))
-  }
-
-  open(): Price {
-    return new Price(this.pipe(pluck('open')));
-  }
-
-  close(): Price {
-    return new Price(this.pipe(pluck('close')));
-  }
-
-  high(): Price {
-    return new Price(this.pipe(pluck('high')));
-  }
-
-  low(): Price {
-    return new Price(this.pipe(pluck('low')));
-  }
-
-  typical(): Price {
-    return new Price(this.pipe(map((c: Candle) => (c.high + c.low + c.close)/3)));
-  }
-
-  volume(): Observable<number> {
-    return this.pipe(pluck('volume'));
-  }
 
   ready(): Observable<boolean> {
     return this.pipe(skip(this._prefetch), first(), map(() => true));

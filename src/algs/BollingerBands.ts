@@ -12,5 +12,6 @@ export function bollingerBands(candles: CoinbaseProCandle):Observable<boolean>[]
   // price dips below lower, buy signal
   const priceBelowLower = new NegativeCrossover(typical, lower);
 
-  return [priceBelowLower, priceOverUpper];
+  // this is actually the opposite of what they say to do, but it works better than the real suggestion
+  return [priceOverUpper, priceBelowLower];
 }
