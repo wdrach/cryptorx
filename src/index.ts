@@ -1,6 +1,6 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover } from './lib/lib';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet } from './lib/lib';
 import { goldenAndDeathCross } from './algs/GoldenAndDeathCross';
 import { bollingerBands } from './algs/BollingerBands';
 import { stoch } from './algs/Stoch';
@@ -139,7 +139,7 @@ if (process.argv.length <= 2) {
   for (let i = 0; i < RUN_SIMS; i++) {
     const wallet = new SimulationWallet();
     wallets.push(wallet);
-    const sim = new CoinbaseProSimulation(86400, 800);
+    const sim = new CoinbaseProSimulation(21600, 365*4);
 
     sims.push(transact(wallet, stoch(sim), sim));
   }
@@ -179,6 +179,9 @@ if (process.argv.length <= 2) {
   } else {
     paperTrade();
   }
+} else if (process.argv.findIndex((val) => val === '-l') !== -1) {
+  const wallet = new CoinbaseWallet();
+  wallet.init();
 } else {
   console.log('unsupported');
 }

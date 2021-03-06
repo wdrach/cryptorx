@@ -1,9 +1,13 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { bufferCount, first, map, pluck, scan, skip, tap } from 'rxjs/operators';
+import { bufferCount, first, map, pluck, skip } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
+import crypto from 'crypto';
 import { appendFile, writeFile } from 'fs';
+
+import dotenv from 'dotenv';
+dotenv.config();
 
 // TODO - this should be all products
 // https://api.pro.coinbase.com/products
@@ -586,7 +590,124 @@ export function log(type: string): (val: any) => void {
   return (val: any) => console.log(`${type}: ${val}`);
 }
 
-export class SimulationWallet {
+interface Wallet {
+  dollars: number;
+  dollarStream: Subject<number>;
+
+  coin: number;
+  coinStream: Subject<number>;
+
+  product: string;
+
+  transactionStream: Subject<Date>;
+  lastTransaction: Date;
+
+  lastFee: number;
+
+  buy(price?: number): void
+  sell(price?: number): void
+}
+
+interface CoinbaseAccount {
+  id: string;
+  currency: string;
+  balance: string;
+  available: string;
+  hold: string;
+  profile_id: string;
+  trading_enabled: boolean;
+}
+
+export class CoinbaseWallet implements Wallet {
+  dollars: number = 0;
+  dollarStream = new Subject<number>();
+  
+  coin: number = 0;
+  coinStream = new Subject<number>();
+
+  product = 'BTC-USD';
+
+  transactionStream = new Subject<Date>();
+  lastTransaction = new Date(Date.now());
+
+  lastFee = 0;
+
+  constructor(product?: CoinbaseProduct) {
+    if (product) {
+      this.product = product;
+    }
+  }
+
+  async _signAndSend(endpoint: string, request?: any) {
+    const method = request ? 'POST' : 'GET';
+
+    const timestamp = Date.now() / 1000;
+
+    let prehash = timestamp + method + endpoint;
+
+    if (request) {
+      prehash += JSON.stringify(request);
+    }
+
+    const key = Buffer.from(process.env.COINBASE_SECRET || '', 'base64');
+    const hmac = crypto.createHmac('sha256', key);
+    const signature = hmac.update(prehash).digest('base64');
+
+    const headers = {
+      'CB-ACCESS-KEY': process.env.COINBASE_API_KEY,
+      'CB-ACCESS-SIGN': signature,
+      'CB-ACCESS-TIMESTAMP': timestamp,
+      'CB-ACCESS-PASSPHRASE': process.env.COINBASE_PASSPHRASE
+    }
+
+    if (method === 'POST') {
+      return axios.post(COINBASE_API + endpoint, {headers})
+    } else {
+      return axios.get(COINBASE_API + endpoint, {headers})
+    }
+  }
+
+  async init() {
+    const accountList = (await this._signAndSend('/accounts')).data;
+
+    const dollarAccount = accountList.find((val: CoinbaseAccount) => val.currency === 'USD');
+    const coinAccount = accountList.find((val: CoinbaseAccount) => val.currency === this.product.split('-')[0]);
+
+    this.dollars = parseFloat(dollarAccount.available);
+    this.coin = parseFloat(coinAccount.available);
+    console.log(`USD: ${this.dollars}, ${this.product.split('-')[0]}: ${this.coin}`);
+  }
+
+  limitBuy(price: number) {
+    console.log('NOT YET IMPLEMENTED');
+  }
+
+  marketBuy() {
+    console.log('NOT YET IMPLEMENTED');
+  }
+
+  buy(price?: number) {
+    if (price) this.limitBuy(price);
+    else this.marketBuy();
+  }
+
+  limitSell(price: number) {
+    console.log('NOT YET IMPLEMENTED');
+  }
+
+  marketSell() {
+    console.log('NOT YET IMPLEMENTED')
+  }
+
+  sell(price?: number) {
+    if (price) this.limitSell(price);
+    else this.marketSell();
+  }
+
+
+}
+
+export class SimulationWallet implements Wallet {
   dollars: number = 1000;
   dollarStream = new Subject<number>();
   startingDollars: number = 1000;
@@ -602,6 +723,7 @@ export class SimulationWallet {
   lastTransaction: Date = new Date(Date.now());
   lastTransactions: Date[] = [];
   transactionFee: number = .005;
+  product = 'BTC-USD';
 
   constuctor(startingCash: number = 1000, fee: number = COINBASE_TRANSACTION_FEE) {
     this.dollars = startingCash;

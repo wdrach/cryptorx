@@ -1,6 +1,11 @@
 # cryptorx
 RxJS + Coinbase Pro/Kraken + Technical Analysis Operators
 
+-l runs a live trade
+  * You need to have either a .env set with environment variables for
+    * COINBASE_API_KEY - your api key
+    * COINBASE_SECRET - your api secret (provided to you by Coinbase when creating a key)
+    * COINBASE_PASSPHRASE - your api passphrase (provided by you to Coinbase when creating a key)
 -s runs a simulation
 -p runs a papertrade (a simulation, but with current data instead of historical data)
 -f + a filename with NO EXTENSION outputs debug csv files
@@ -13,12 +18,6 @@ Hitlist:
 
 Indicators:
 Oscillators:
- - Stochastic oscillator: https://www.investopedia.com/terms/s/stochasticoscillator.asp
-   - %K (current value): 100*(C - L14)/(H14 - L14)
-   - %D: 3 day moving average of %K
-   - Stochastic slow
-     - %K 3 period moving average of fast %K, equal to fast %D
-     - %D 3 period moving average of slow %K
  - RSI: https://www.investopedia.com/terms/r/rsi.asp
  - Price Rate of Change (ROC): https://www.investopedia.com/terms/p/pricerateofchange.asp
  - Money Flow Index (MFI): https://www.investopedia.com/terms/m/mfi.asp
