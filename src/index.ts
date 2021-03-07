@@ -113,9 +113,9 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
 }
 
 let paperTrade = (filename?: string) => {
-  const candles = new CoinbaseProCandle('BTC-USD', 100);
+  const candles = new CoinbaseProCandle('BTC-USD', 100, 86400);
   const price = new CoinbaseProPrice();
-  paperTransact(goldenAndDeathCross(candles), candles, price, filename);
+  paperTransact(stoch(candles), candles, price, filename);
 }
 
 if (process.argv.length <= 2) {
@@ -139,7 +139,7 @@ if (process.argv.length <= 2) {
   for (let i = 0; i < RUN_SIMS; i++) {
     const wallet = new SimulationWallet();
     wallets.push(wallet);
-    const sim = new CoinbaseProSimulation(21600, 365*4);
+    const sim = new CoinbaseProSimulation(86400, 365);
 
     sims.push(transact(wallet, stoch(sim), sim));
   }
@@ -153,6 +153,14 @@ if (process.argv.length <= 2) {
     let trades = 0;
     let profit = 0;
 
+    let worstProfit = -1;
+    let bestProfit = -1;
+    let worstExpectedProfit = -1;
+    let bestExpectedProfit = -1;
+    let worstProfitOverReplacement = -1;
+    let bestProfitOverReplacement = -1;
+
+
     for (let wallet of wallets) {
       cash += wallet.netWorth;
       expected += wallet.expected;
@@ -161,16 +169,31 @@ if (process.argv.length <= 2) {
       profitOverReplacement += wallet.profitOverReplacement;
       fees += wallet.fees;
       trades += wallet.transactions;
+
+      if (worstExpectedProfit === -1 || wallet.expectedProfit < worstExpectedProfit) {
+        worstExpectedProfit = wallet.expectedProfit;
+        worstProfit = wallet.profit;
+        worstProfitOverReplacement = wallet.profitOverReplacement;
+      }
+
+      if (bestExpectedProfit === -1 || wallet.expectedProfit > bestExpectedProfit) {
+        bestExpectedProfit = wallet.expectedProfit;
+        bestProfit = wallet.profit;
+        bestProfitOverReplacement = wallet.profitOverReplacement;
+      }
     }
 
     expectedProfit = expectedProfit / RUN_SIMS;
     profit = profit / RUN_SIMS;
     profitOverReplacement = profitOverReplacement / RUN_SIMS;
 
-    console.log(`\nGot ${cash} in the bank`);
-    console.log(`would have ${expected} in the bank if I just held`);
+    console.log(`\nGot ${(cash / RUN_SIMS).toFixed(2)} in the bank`);
+    console.log(`would have ${(expected / RUN_SIMS).toFixed(2)} in the bank if I just held`);
     console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
-    console.log(`you made ${(trades).toFixed(2)} trades, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)}`)
+    console.log(`you made ${(trades / RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)} per sim`);
+    console.log('--------------------------------------------------------------');
+    console.log(`The best sim made ${bestProfit.toFixed(2)} over ${bestExpectedProfit.toFixed(2)} for a POR of ${bestProfitOverReplacement.toFixed(2)}`)
+    console.log(`The worst sim made ${worstProfit.toFixed(2)} over ${worstExpectedProfit.toFixed(2)} for a POR of ${worstProfitOverReplacement.toFixed(2)}`)
   });
 } else if (process.argv.findIndex((val) => val === '-p') !== -1) {
   let filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;

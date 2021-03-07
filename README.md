@@ -1,6 +1,8 @@
 # cryptorx
 RxJS + Coinbase Pro/Kraken + Technical Analysis Operators
 
+This is warranty-free. Use at your own risk.
+
 -l runs a live trade
   * You need to have either a .env set with environment variables for
     * COINBASE_API_KEY - your api key

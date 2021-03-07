@@ -18,7 +18,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -p .",
-    "start": "ts-node src/index.ts"
+    "start": "ts-node src/index.ts",
+    "stoch-live": "ts-node src/scripts/stoch.ts"
   },
   "repository": {
     "type": "git",

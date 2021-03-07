@@ -625,6 +625,8 @@ export class CoinbaseWallet implements Wallet {
   coin: number = 0;
   coinStream = new Subject<number>();
 
+  inMarket: boolean = false;
+
   product = 'BTC-USD';
 
   transactionStream = new Subject<Date>();
@@ -675,36 +677,72 @@ export class CoinbaseWallet implements Wallet {
 
     this.dollars = parseFloat(dollarAccount.available);
     this.coin = parseFloat(coinAccount.available);
+
+    this.inMarket = this.coin > .0001
     console.log(`USD: ${this.dollars}, ${this.product.split('-')[0]}: ${this.coin}`);
+    console.log(`In market: ${this.inMarket}`)
   }
 
   limitBuy(price: number) {
-    console.log('NOT YET IMPLEMENTED');
+    this._signAndSend('/orders', {
+      type: 'limit',
+      side: 'buy',
+      price: price.toString(),
+      size: this.dollars
+    })
   }
 
   marketBuy() {
-    console.log('NOT YET IMPLEMENTED');
+    this._signAndSend('/orders', {
+      type: 'market',
+      side: 'buy',
+      size: this.dollars
+    })
   }
 
   buy(price?: number) {
+    if (this.inMarket) return;
     if (price) this.limitBuy(price);
     else this.marketBuy();
+
+    this.inMarket = true;
   }
 
   limitSell(price: number) {
-    console.log('NOT YET IMPLEMENTED');
+    this._signAndSend('/orders', {
+      type: 'limit',
+      side: 'sell',
+      price: price.toString(),
+      size: this.coin
+    })
   }
 
   marketSell() {
-    console.log('NOT YET IMPLEMENTED')
+    this._signAndSend('/orders', {
+      type: 'market',
+      side: 'sell',
+      size: this.coin
+    })
   }
 
   sell(price?: number) {
+    if (!this.inMarket) return;
     if (price) this.limitSell(price);
     else this.marketSell();
+
+    this.inMarket = false;
   }
 
 
+  transact(buySignal: Observable<boolean>, sellSignal: Observable<boolean>, readySignal: Observable<boolean>) {
+    combineLatest([buySignal, sellSignal, readySignal]).subscribe(([sell, buy, ready]) => {
+        // if we're not ready, we're still in pre-data, not live data
+        if (!ready || sell === buy) return;
+
+        if (sell) this.sell();
+        else if (buy) this.buy();
+    })
+  }
 }
 
 export class SimulationWallet implements Wallet {
