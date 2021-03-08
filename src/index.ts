@@ -1,8 +1,6 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet } from './lib/lib';
-import { goldenAndDeathCross } from './algs/GoldenAndDeathCross';
-import { bollingerBands } from './algs/BollingerBands';
 import { stoch } from './algs/Stoch';
 
 function transact(wallet: SimulationWallet, signals: Observable<boolean>[], candles: CoinbaseProCandle) {
@@ -57,7 +55,7 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
     else if (buy) wallet.buy(price);
   })
 
-  candles.ready().subscribe((val) => {
+  candles.ready.subscribe((val) => {
     ready = val
   });
   priceStream.subscribe((val) => {

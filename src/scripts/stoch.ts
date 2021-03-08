@@ -8,4 +8,4 @@ const candles = new CoinbaseProCandle('BTC-USD', 300, 86400);
 
 const [buySignal, sellSignal] = stoch(candles);
 
-wallet.transact(buySignal, sellSignal, candles.ready());
+wallet.transact(buySignal, sellSignal, candles.ready);

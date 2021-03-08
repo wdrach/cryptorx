@@ -342,6 +342,8 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
   const endDate = new Date(current);
   const endStr = endDate.toISOString();
 
+  console.log(`fetching candles for ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`)
+
   // bump cur by 1 more candle before updating so we don't overlap that minute
   current += period*1000;
 
@@ -352,6 +354,7 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
   try {
     data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`)
   } catch (e) {
+    console.log('Got an error, likely hit API limits');
     let prom = new Promise<Candle[]>((resolve) => {
       setTimeout(async () => {
         resolve(await _fetchCandles(product, prefetch, period, inputCurrent, inputEndTime));
@@ -458,6 +461,9 @@ export class CoinbaseProCandle extends Candles {
   _timeout: NodeJS.Timeout | undefined;
   _prefetch: number;
 
+  ready: Subject<boolean> = new Subject<boolean>();
+  current: Subject<boolean> = new Subject<boolean>();
+
   /**
    * Constructs and prefetches a Subject of historical CoinbaseProCandles
    * 
@@ -474,6 +480,7 @@ export class CoinbaseProCandle extends Candles {
     let endTime = timestamp ? timestamp + (prefetch * period * 1000) : undefined;
 
     _fetchCandles(product, prefetch, period, startTime, endTime).then((candles: Array<Candle>) => {
+      console.log('received the initial batch of candles');
       for (let candle of candles) {
         this.next(candle);
       }
@@ -489,6 +496,7 @@ export class CoinbaseProCandle extends Candles {
       let delay = (2 * period) - diff;
 
       if (delay < 0) delay = 0;
+      else this.current.next(true);
 
       this._timeout = setTimeout(async () => {
         const timeoutCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
@@ -496,9 +504,12 @@ export class CoinbaseProCandle extends Candles {
           this.next(candle);
         }
 
+        if (delay === 0) this.current.next(true);
+
         lastTimestamp = timeoutCandles[timeoutCandles.length - 1].time;
 
         this._timeout = setInterval(async () => {
+          this.ready.next(true);
           const intervalCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
 
           if (intervalCandles.length) {
@@ -511,11 +522,6 @@ export class CoinbaseProCandle extends Candles {
         }, 1000 * period)
       }, 1000 * delay)
     });
-  }
-
-
-  ready(): Observable<boolean> {
-    return this.pipe(skip(this._prefetch), first(), map(() => true));
   }
 
   unsubscribe() {
@@ -663,14 +669,14 @@ export class CoinbaseWallet implements Wallet {
     }
 
     if (method === 'POST') {
-      return axios.post(COINBASE_API + endpoint, {headers})
+      return axios.post(COINBASE_API + endpoint, request, {headers}).catch((err) => console.log(err.response.data.message));
     } else {
       return axios.get(COINBASE_API + endpoint, {headers})
     }
   }
 
   async init() {
-    const accountList = (await this._signAndSend('/accounts')).data;
+    const accountList = (await this._signAndSend('/accounts') || {}).data;
 
     const dollarAccount = accountList.find((val: CoinbaseAccount) => val.currency === 'USD');
     const coinAccount = accountList.find((val: CoinbaseAccount) => val.currency === this.product.split('-')[0]);
@@ -680,24 +686,27 @@ export class CoinbaseWallet implements Wallet {
 
     this.inMarket = this.coin > .0001
     console.log(`USD: ${this.dollars}, ${this.product.split('-')[0]}: ${this.coin}`);
-    console.log(`In market: ${this.inMarket}`)
+    console.log(`In market: ${this.inMarket}`);
   }
 
   limitBuy(price: number) {
     this._signAndSend('/orders', {
+      product_id: this.product,
       type: 'limit',
       side: 'buy',
       price: price.toString(),
-      size: this.dollars
-    })
+      funds: this.dollars.toFixed(2)
+    });
   }
 
   marketBuy() {
+    console.log(`buying \$${this.dollars} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
     this._signAndSend('/orders', {
+      product_id: this.product,
       type: 'market',
       side: 'buy',
-      size: this.dollars
-    })
+      funds: Math.floor(this.dollars).toFixed(2)
+    });
   }
 
   buy(price?: number) {
@@ -710,19 +719,22 @@ export class CoinbaseWallet implements Wallet {
 
   limitSell(price: number) {
     this._signAndSend('/orders', {
+      product_id: this.product,
       type: 'limit',
       side: 'sell',
       price: price.toString(),
-      size: this.coin
-    })
+      size: this.coin.toString()
+    });
   }
 
   marketSell() {
+    console.log(`selling ${this.coin} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
     this._signAndSend('/orders', {
+      product_id: this.product,
       type: 'market',
       side: 'sell',
-      size: this.coin
-    })
+      size: this.coin.toString()
+    });
   }
 
   sell(price?: number) {
