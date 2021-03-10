@@ -15,8 +15,9 @@ This is warranty-free. Use at your own risk.
 
 Hitlist:
  - Weight decisions
- - Real transactions!
  - Tests for indicators
+ - Stability improvements
+   - webhook heartbeat based candle timekeeper
 
 Indicators:
 Oscillators:

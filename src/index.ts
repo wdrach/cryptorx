@@ -1,11 +1,11 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet } from './lib/lib';
-import { stoch } from './algs/Stoch';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet, AlgorithmResult } from './lib/lib';
+import { stoch } from './algs/RealStoch';
 
-function transact(wallet: SimulationWallet, signals: Observable<boolean>[], candles: CoinbaseProCandle) {
-  const buySignal = signals[0];
-  const sellSignal = signals[1];
+function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
+  const buySignal = signals.buy;
+  const sellSignal = signals.sell;
 
   let price = 0;
   candles.close().subscribe((val) => {
@@ -26,7 +26,7 @@ function transact(wallet: SimulationWallet, signals: Observable<boolean>[], cand
 
 let state: Record<string, Observable<any>> = {};
 
-function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandle, priceStream: CoinbaseProPrice, filename?: string) {
+function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, priceStream: CoinbaseProPrice, filename?: string) {
   const wallet = new SimulationWallet();
   state.coin = wallet.coinStream;
   state.dollars = wallet.dollarStream;
@@ -39,8 +39,8 @@ function paperTransact(signals: Observable<boolean>[], candles: CoinbaseProCandl
   state.close = candles.close();
   state.price = priceStream;
 
-  const buySignal = signals[0];
-  const sellSignal = signals[1];
+  const buySignal = signals.buy;
+  const sellSignal = signals.sell;
   state.buy = buySignal;
   state.sell = sellSignal;
 

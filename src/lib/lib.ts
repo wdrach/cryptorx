@@ -1,12 +1,13 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { bufferCount, first, map, pluck, skip } from 'rxjs/operators';
+import { bufferCount, map, pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
-import { appendFile, writeFile } from 'fs';
+import { promises } from 'fs';
 
 import dotenv from 'dotenv';
+import { writeFileSync } from 'node:fs';
 dotenv.config();
 
 // TODO - this should be all products
@@ -17,6 +18,12 @@ export type CoinbaseGranularity = 60 | 300 | 900 | 3600 | 21600 | 86400;
 const COINBASE_API = 'https://api.pro.coinbase.com';
 export const COINBASE_EARLIEST_TIMESTAMP = 1437428220000;
 const COINBASE_TRANSACTION_FEE = .005;
+
+export interface AlgorithmResult {
+  buy: Observable<boolean>;
+  sell: Observable<boolean>;
+  state?: Record<string, Observable<any>>;
+}
 
 /** A convenience class for working with candle data */
 export class Candle {
@@ -405,21 +412,44 @@ export class Candles extends Subject<Candle> {
     return this.pipe(pluck('volume'));
   }
 
-  /**
-   * The stochastic %K, defined as:
-   *  100 * (C - L(P))/(H(P) - L(P))
-   * 
-   * Where L(P) is the low price P periods back
-   * and H(P) is the high price P periods back
-   * 
-   * @param period the period to compare to, default of 14
-   */
-  stoch(period: number = 14): Price {
+  // fstoch, or "fucked stoch" is my initial fuck up of the stochastic oscillator
+  // that turned out to be incredibly profitable when used correctly
+  fstoch(period: number = 14): Price {
     const reducer = map((values: Candle[]) => {
       const lastValue = values[values.length - 1];
       const firstValue = values[0];
 
       return 100 * (lastValue.close - firstValue.low) / (firstValue.high - firstValue.low);
+    });
+
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
+  }
+  fstochD(period: number = 14, avgPeriod: number = 3): Price {
+    return this.stoch(period).ema(avgPeriod);
+  }
+  fstochSlow(period: number = 14, avgPeriod: number = 3): Price {
+    return this.stochD(period, avgPeriod);
+  }
+  fstochSlowD(period: number = 14, avgPeriod: number = 3, secondAvgPeriod: number = 3): Price {
+    return this.stochSlow(period, avgPeriod).ema(secondAvgPeriod);
+  }
+
+  /**
+   * The stochastic %K, defined as:
+   *  100 * (C - L(P))/(H(P) - L(P))
+   * 
+   * Where L(P) is the low price in the last P periods
+   * and H(P) is the high price in the last P periods
+   * 
+   * @param period the period to compare to, default of 14
+   */
+  stoch(period: number = 14): Price {
+    const reducer = map((values: Candle[]) => {
+      const lowest = values.reduce((acc, val) => (val.low < acc || acc !== -1) ? val.low : acc, -1)
+      const highest = values.reduce((acc, val) => val.high > acc ? val.high : acc, -1)
+      const lastValue = values[values.length - 1];
+
+      return 100 * (lastValue.close - lowest) / (highest - lowest);
     });
 
     return new Price(this.pipe(bufferCount(period, 1), reducer));
@@ -575,7 +605,7 @@ export class NegativeCrossover extends Decision<number> {
   }
 }
 
-export function writeState(values: Record<string, Observable<any>>, writeObs: Observable<any>, filename: string) {
+export async function writeState(values: Record<string, Observable<any>>, writeObs: Observable<any>, filename: string) {
   const state: Record<string, any> = {};
 
   for (let key in values) {
@@ -584,12 +614,11 @@ export function writeState(values: Record<string, Observable<any>>, writeObs: Ob
   }
 
   let keys = Object.keys(state);
+  await promises.writeFile(filename, keys.join(',') + '\n');
 
-  writeFile(filename, keys.join(',') + '\n', () => {
-    writeObs.subscribe(() => {
-      appendFile(filename, keys.map((key) => state[key] || '').join(',') + '\n', () => {})
-    })
-  });
+  writeObs.subscribe(async () => {
+    await promises.appendFile(filename, keys.map((key) => (state[key] || '')).join(',') + '\n')
+  })
 }
 
 export function log(type: string): (val: any) => void {

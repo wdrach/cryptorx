@@ -6,8 +6,8 @@ export function stoch(candles: Candles):AlgorithmResult {
   const UPPER = 80;
   const LOWER = 20;
 
-  const stochK = candles.fstochSlow();
-  const stochD = candles.fstochSlowD();
+  const stochK = candles.stochSlow();
+  const stochD = candles.stochSlowD();
 
   // stoch is above upper
   const overbought = stochK.pipe(map((val) => val > UPPER));
@@ -29,8 +29,8 @@ export function stoch(candles: Candles):AlgorithmResult {
 
   // this is actually the opposite of what it's supposed to be
   return {
-    buy: sell,
-    sell: buy,
+    sell,
+    buy,
     state: {
       stochK,
       stochD,
