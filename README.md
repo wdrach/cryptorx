@@ -1,9 +1,46 @@
 # cryptorx
-RxJS + Coinbase Pro/Kraken + Technical Analysis Operators
 
-This is warranty-free. Use at your own risk.
+Hello, if you are reading this, that means you're one of the few, the proud, the people who I trust with this project.
 
--l runs a live trade
+First things first, this is a deeply personal project to me. It is provided without warranty. It is provided without promise. It is provided without support. I will happily take suggestions, but I will not guarantee anything. All of this is best-effort.
+
+I can't guarantee that any of this _actually_ does what it says. This is a project for me, and since I'm not a big corporate fund with promises to stakeholders, I don't actually _have_ to have it perfect. Nothing works in crypto that works in traditional trades, so this is all one big shitshow anyway. See "fucked stoch" or "algs/Stoch.ts" for an example. Mistakes can breed profits if they test well.
+
+As of now, all algorithms are "all-in" meaning they will trade with 100% of the funds available, and they will utilize every cent/coin in your Coinbase account. You can create Coinbase portfolios and manage the keys that way if you want to not go 100%.
+
+## Quick start
+Get a Raspberry Pi. Make sure you get a case, a power cord, an sd card, and an sd adapter. Make sure you can plug it into ethernet or this is going to be a lot harder. Put the case on it, install Ubuntu server, and plug it in. SSH into it, clone or download this repo into it. Run updates just to be safe. Run `crontab -e` and add this line:
+```
+05 18 * * * cd <repo_location>; /usr/local/bin/npm run daily-cron
+```
+
+## The library
+The library (`src/lib`) is all of the helpers that make up the algs and runners laid out in this library. It's all documented to the best of my ability. In summary, it goes:
+ - Coinbase Candles collects historical and current data from Coinbase
+ - The math on prices and candles get sent into the Decision class which outputs a stream of true/false values
+ - A wallet is initialized with the Coinbase API keys
+ - The transact helper takes in the buy/sell Decisions and makes transactions
+
+## Running
+
+### Coinbase keys
+**note - Coinbase keys are not necessary to run in papertrade or backtesting mode, just live mode**
+
+You can generate a key using [this guide.](https://help.coinbase.com/en/pro/other-topics/api/how-do-i-create-an-api-key-for-coinbase-pro)
+
+Once that key is generated, create a `.env` file in the root of this repo with the following format:
+```
+COINBASE_API_KEY="<api key>"
+COINBASE_SECRET="<secret provided BY Coinbase>"
+COINBASE_PASSPHRASE="<passphrase provided TO Coinbase>"
+```
+
+You can now run the scripts in this repo in "live mode."
+
+### Scratch pad
+`npm start -- <option>` runs the scratch pad (`index.js`). This is a completely random thing that is used for backtesting and trying new things. It is not stable.
+
+-l runs a live trade mode
   * You need to have either a .env set with environment variables for
     * COINBASE_API_KEY - your api key
     * COINBASE_SECRET - your api secret (provided to you by Coinbase when creating a key)
@@ -12,68 +49,8 @@ This is warranty-free. Use at your own risk.
 -p runs a papertrade (a simulation, but with current data instead of historical data)
 -f + a filename with NO EXTENSION outputs debug csv files
 
+### Best Algs
+The best algs I've found for a given time period are noted in scripts.
 
-Hitlist:
- - Weight decisions
- - Tests for indicators
- - Stability improvements
-   - webhook heartbeat based candle timekeeper
-
-Indicators:
-Oscillators:
- - RSI: https://www.investopedia.com/terms/r/rsi.asp
- - Price Rate of Change (ROC): https://www.investopedia.com/terms/p/pricerateofchange.asp
- - Money Flow Index (MFI): https://www.investopedia.com/terms/m/mfi.asp
-
-Candlestick Patterns:
- * Potency reduces drasically 3-5 periods after a pattern is noticed
- - 3 line strike
-   - Used on a downtrend, reversal signal
-   - 3 downward candles followed by a single upward candle that closes above the first candle's high
-   - Predicts higher prices with 83% accuracy
- - 3 black crows
-   - Used on an uptrend, reversal signal
-   - Starts at or near the high of an uptrend
-   - 3 bars in a row that reach new lows and close below the previous bar's low
-   - Predicts lower prices with a 78% accuracy
- - Evening star
-   - Used on an uptrend, reversal signal
-   - Tall upward bar
-   - Short bar (low volume)
-   - Tall downward bar
-   - Predicts lower prices with a 72% accuracy
- - Abandoned baby
-   - The opposite of an Evening Star, downtrend reversal signal
-   - Tall downward bar
-   - Short bar (low volume)
-   - Tall upward bar
-   - Predicts higher prices with a 50% accuracy
-
- ## Notes
- Lower Bollinger bands - 1 day candle, 20 day period, 2 stddev - appear to be a pretty good buy indicator
- The upper bands are horrible sell indicators
-
-
-Stochastic bounds - 80 = overbought, 20 = oversold
- A trader might interpret a sell signal when the Stochastic is above the 80 overbought line and the %K line crosses below the %D line, sell.
- A trader might interpret a buy signal when the Stochastic is below the 20 oversold line and the %K line crosses over the %D line.
- When Stochastics spend a lot of time in overbought or oversold, that's a sign of a strong trend
-
- The slow stochastic with _no_ overbought or oversold lines looks like a great indicator at first glance.
-
-
- Streak indicators:
- https://help.streak.tech/indicators/
-
- Major Indicators
- Averages:
-  - EMA(5), SMA(5), EMA(10), SMA(10), EMA(20), SMA(20), ... (there's 16 indicators but that's all they list)
-     - Buy strategy
-        - If the short term trend is bullish, then you can use: SMA(20) higher than SMA(40)
-     - Sell strategy
-        - If the short term trend is bearish, then you can use: SMA(20) lower than SMA(40)
- Oscillators:
-  - RSI(14), Stoch.%K (14, 3, 3), CCI (20), ADI (14), Awesome Osc., Momentum (10), ... (there's 10 indicators but that's all they list)
-
-Algs:
-https://streak.world/discover
+#### 1 day
+`npm run daily-cron` is meant to be run once a day. Coinbase "closes" their day at midnight UTC, so for best results run this script as a daily cronjob, scheduled for a few minutes (say, 5) after midnight UTC.

@@ -19,9 +19,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -p .",
     "start": "ts-node src/index.ts",
-    "stoch-live": "ts-node src/scripts/stoch.ts",
-    "stoch-cron": "ts-node src/scripts/stoch-cron.ts",
-    "test-coinbase": "ts-node src/scripts/test-coinbase.ts"
+    "daily-cron": "ts-node src/scripts/daily-cron.ts"
   },
   "repository": {
     "type": "git",
