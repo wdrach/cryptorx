@@ -11,7 +11,7 @@ As of now, all algorithms are "all-in" meaning they will trade with 100% of the 
 ## Quick start
 Get a Raspberry Pi. Make sure you get a case, a power cord, an sd card, and an sd adapter. Make sure you can plug it into ethernet or this is going to be a lot harder. Put the case on it, install Ubuntu server, and plug it in. SSH into it, clone or download this repo into it. Run updates just to be safe. Run `crontab -e` and add this line:
 ```
-05 18 * * * cd <repo_location>; /usr/local/bin/npm run daily-cron
+05 0 * * * /usr/local/bin/npm run daily-cron --prefix /home/ubuntu/Git/cryptorx/ >> /home/ubuntu/log.txt
 ```
 
 ## The library
