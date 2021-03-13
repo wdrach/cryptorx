@@ -1,7 +1,7 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet, AlgorithmResult } from './lib/lib';
-import { stoch } from './algs/RealStoch';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet, AlgorithmResult, CoinbaseGranularity } from './lib/lib';
+import { stoch } from './algs/SimpleStoch';
 
 function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
   const buySignal = signals.buy;
@@ -130,14 +130,14 @@ if (process.argv.length <= 2) {
   const price = new CoinbaseProPrice();
   price.subscribe(log('price'));
 } else if (process.argv.findIndex((val) => val === '-s') !== -1) {
-  const RUN_SIMS = 100;
+  const RUN_SIMS = 10;
 
   const sims = [];
   const wallets: SimulationWallet[] = [];
   for (let i = 0; i < RUN_SIMS; i++) {
     const wallet = new SimulationWallet();
     wallets.push(wallet);
-    const sim = new CoinbaseProSimulation(86400, 365);
+    const sim = new CoinbaseProSimulation(CoinbaseGranularity.HOUR, 365*24);
 
     sims.push(transact(wallet, stoch(sim), sim));
   }
@@ -168,13 +168,13 @@ if (process.argv.length <= 2) {
       fees += wallet.fees;
       trades += wallet.transactions;
 
-      if (worstExpectedProfit === -1 || wallet.expectedProfit < worstExpectedProfit) {
+      if (worstProfit === -1 || wallet.profit < worstProfit) {
         worstExpectedProfit = wallet.expectedProfit;
         worstProfit = wallet.profit;
         worstProfitOverReplacement = wallet.profitOverReplacement;
       }
 
-      if (bestExpectedProfit === -1 || wallet.expectedProfit > bestExpectedProfit) {
+      if (bestProfit === -1 || wallet.profit > bestProfit) {
         bestExpectedProfit = wallet.expectedProfit;
         bestProfit = wallet.profit;
         bestProfitOverReplacement = wallet.profitOverReplacement;

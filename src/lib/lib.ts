@@ -13,7 +13,14 @@ dotenv.config();
 // TODO - this should be all products
 // https://api.pro.coinbase.com/products
 export type CoinbaseProduct = 'BTC-USD';
-export type CoinbaseGranularity = 60 | 300 | 900 | 3600 | 21600 | 86400;
+export enum CoinbaseGranularity {
+  MINUTE = 60,
+  FIVE_MINUTE = 300,
+  FIFTEEN_MINUTE = 900,
+  HOUR = 3600,
+  SIX_HOUR = 21600,
+  DAY = 86400
+};
 
 const COINBASE_API = 'https://api.pro.coinbase.com';
 export const COINBASE_EARLIEST_TIMESTAMP = 1437428220000;
@@ -445,7 +452,7 @@ export class Candles extends Subject<Candle> {
    */
   stoch(period: number = 14): Price {
     const reducer = map((values: Candle[]) => {
-      const lowest = values.reduce((acc, val) => (val.low < acc || acc !== -1) ? val.low : acc, -1)
+      const lowest = values.reduce((acc, val) => (val.low < acc || acc === -1) ? val.low : acc, -1)
       const highest = values.reduce((acc, val) => val.high > acc ? val.high : acc, -1)
       const lastValue = values[values.length - 1];
 
@@ -502,7 +509,7 @@ export class CoinbaseProCandle extends Candles {
    * @param period The granularity, in seconds, of how large the candles are
    * @param timestamp For testing & simulation only, use to fetch a set number of historical candles starting at this timestamp
    */
-  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = 60, timestamp?: number) {
+  constructor(product: CoinbaseProduct = 'BTC-USD', prefetch: number = 300, period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, timestamp?: number) {
     super();
     this._prefetch = prefetch;
 
@@ -564,7 +571,7 @@ export class CoinbaseProCandle extends Candles {
 }
 
 export class CoinbaseProSimulation extends CoinbaseProCandle {
-  constructor(period: CoinbaseGranularity = 60, time: number = 300, product: CoinbaseProduct = 'BTC-USD') {
+  constructor(period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, time: number = 300, product: CoinbaseProduct = 'BTC-USD') {
     let last = Date.now() - (time * period * 1000);
     if (last < COINBASE_EARLIEST_TIMESTAMP) {
       last = COINBASE_EARLIEST_TIMESTAMP;

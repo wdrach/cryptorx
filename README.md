@@ -14,6 +14,12 @@ Get a Raspberry Pi. Make sure you get a case, a power cord, an sd card, and an s
 05 0 * * * /usr/local/bin/npm run daily-cron --prefix /home/ubuntu/Git/cryptorx/ >> /home/ubuntu/log.txt
 ```
 
+OR
+
+```
+02 * * * * /usr/local/bin/npm run hourly-cron --prefix /home/ubuntu/Git/cryptorx/ >> /home/ubuntu/log.txt
+```
+
 ## The library
 The library (`src/lib`) is all of the helpers that make up the algs and runners laid out in this library. It's all documented to the best of my ability. In summary, it goes:
  - Coinbase Candles collects historical and current data from Coinbase

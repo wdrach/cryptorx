@@ -19,7 +19,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -p .",
     "start": "ts-node src/index.ts",
-    "daily-cron": "ts-node src/scripts/daily-cron.ts"
+    "daily-cron": "ts-node src/scripts/daily-cron.ts",
+    "hourly-cron": "ts-node src/scripts/hourly-cron.ts"
   },
   "repository": {
     "type": "git",
