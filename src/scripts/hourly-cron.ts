@@ -27,7 +27,7 @@ const main = async () => {
 
     const unsubscriber = new Subject<void>()
 
-    combineLatest([buySignal, sellSignal, candles.time(), candles.current]).pipe(takeUntil(unsubscriber)).subscribe(([sell, buy, time, ready]) => {
+    combineLatest([buySignal, sellSignal, candles.time(), candles.current]).pipe(takeUntil(unsubscriber)).subscribe(([buy, sell, time, ready]) => {
         // if we're not ready, we're still in pre-data, not live data
         if (!ready) return;
 

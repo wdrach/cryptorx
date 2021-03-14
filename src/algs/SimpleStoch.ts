@@ -1,5 +1,4 @@
-import { Observable, zip } from "rxjs";
-import { map, tap } from "rxjs/operators";
+import { map } from "rxjs/operators";
 import { AlgorithmResult, Candles, Crossover } from "../lib/lib";
 
 export function stoch(candles: Candles):AlgorithmResult {
@@ -7,7 +6,6 @@ export function stoch(candles: Candles):AlgorithmResult {
   const LOWER = 20;
 
   const stochK = candles.stochSlow();
-  const stochD = candles.stochSlowD();
 
   // stoch is above upper
   const overbought = stochK.pipe(map((val) => val > UPPER));
@@ -20,7 +18,6 @@ export function stoch(candles: Candles):AlgorithmResult {
     buy: overbought,
     state: {
       stochK,
-      stochD,
       overbought,
       oversold,
     }

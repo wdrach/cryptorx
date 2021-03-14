@@ -7,7 +7,6 @@ import crypto from 'crypto';
 import { promises } from 'fs';
 
 import dotenv from 'dotenv';
-import { writeFileSync } from 'node:fs';
 dotenv.config();
 
 // TODO - this should be all products
