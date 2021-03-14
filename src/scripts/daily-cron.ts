@@ -5,7 +5,7 @@ import { CoinbaseProCandle, CoinbaseWallet, writeState } from "../lib/lib";
 
 const main = async () => {
     const wallet = new CoinbaseWallet();
-    wallet.init();
+    await wallet.init();
 
     const candles = new CoinbaseProCandle('BTC-USD', 20, 86400);
 

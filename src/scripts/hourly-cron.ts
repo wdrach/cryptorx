@@ -5,7 +5,7 @@ import { CoinbaseGranularity, CoinbaseProCandle, CoinbaseWallet, writeState } fr
 
 const main = async () => {
     const wallet = new CoinbaseWallet();
-    wallet.init();
+    await wallet.init();
 
     const candles = new CoinbaseProCandle('BTC-USD', 20, CoinbaseGranularity.HOUR);
 
