@@ -142,7 +142,14 @@ export class Price extends Subject<number> {
     return this.sma(200);
   }
 
-  _ema(currentEma: number, val: number, smoothing: number) {
+  _ema(currentEma: number, val: number, smoothing: number, period: number) {
+    const commonTerm = (smoothing / (1 + period));
+    return val * commonTerm + currentEma * (1 - commonTerm);
+  }
+
+  // I'm not saying I condone messing up math, I'm just saying there isn't always
+  // a reason for everything
+  _fema(currentEma: number, val: number, smoothing: number) {
     return smoothing * (val - currentEma) + val;
   }
 
@@ -168,7 +175,32 @@ export class Price extends Subject<number> {
 
         return this._sma(values);
       } else {
-        currentEma = this._ema(currentEma, values[len - 1], smoothingConstant);
+        currentEma = this._ema(currentEma, values[len - 1], smoothingConstant, len);
+        return currentEma;
+      }
+    });
+
+    return new Price(this.pipe(bufferCount(period, 1), reducer));
+  }
+
+  /** It's EMA with a twist! (the twist is it doesn't do what it's supposed to) */
+  fema(period: number, smoothing?: number): Price {
+    const smoothingConstant = smoothing || 2/(period + 1);
+
+    let currentEma = 0;
+    const reducer = map((values: number[]) => {
+      const len = values.length;
+
+      // no EMA? Start with an SMA
+      if (!currentEma) {
+        if (values.length >= (period - 1)) {
+          currentEma = this._sma(values);
+          return currentEma;
+        }
+
+        return this._sma(values);
+      } else {
+        currentEma = this._fema(currentEma, values[len - 1], smoothingConstant);
         return currentEma;
       }
     });
@@ -218,7 +250,6 @@ export class Price extends Subject<number> {
    * @param deviations the number of standard deviations to offset the band
    */
   bollingerBand(upper: boolean = true, period: number = 20, deviations: number = 2) {
-    let values: Array<number> = [];
     const reducer = map((values: number[]) => {
       const sma = this._sma(values);
       const stddev = this._stddev(sma, values);
@@ -254,7 +285,7 @@ export class Price extends Subject<number> {
           ema = this._sma(values);
         }
       } else {
-        currentEma = this._ema(currentEma, values[len - 1], smoothingConstant);
+        currentEma = this._ema(currentEma, values[len - 1], smoothingConstant, len);
         ema = currentEma;
       }
       const stddev = this._stddev(ema, values);
@@ -431,13 +462,13 @@ export class Candles extends Subject<Candle> {
     return new Price(this.pipe(bufferCount(period, 1), reducer));
   }
   fstochD(period: number = 14, avgPeriod: number = 3): Price {
-    return this.stoch(period).ema(avgPeriod);
+    return this.stoch(period).fema(avgPeriod);
   }
   fstochSlow(period: number = 14, avgPeriod: number = 3): Price {
     return this.stochD(period, avgPeriod);
   }
   fstochSlowD(period: number = 14, avgPeriod: number = 3, secondAvgPeriod: number = 3): Price {
-    return this.stochSlow(period, avgPeriod).ema(secondAvgPeriod);
+    return this.stochSlow(period, avgPeriod).fema(secondAvgPeriod);
   }
 
   /**
@@ -490,6 +521,11 @@ export class Candles extends Subject<Candle> {
    */
   stochSlowD(period: number = 14, avgPeriod: number = 3, secondAvgPeriod: number = 3): Price {
     return this.stochSlow(period, avgPeriod).ema(secondAvgPeriod);
+  }
+
+  // fucked fucked stoch. do I need to say anything else?
+  ffstoch(period: number = 14, avgPeriod: number = 3): Price {
+    return this.stoch(period).fema(avgPeriod);
   }
 }
 

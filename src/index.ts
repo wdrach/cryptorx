@@ -1,7 +1,7 @@
-import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
+import { forkJoin, Observable, combineLatest } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet, AlgorithmResult, CoinbaseGranularity } from './lib/lib';
-import { stoch } from './algs/SimpleStoch';
+import { stoch } from './algs/FFStoch';
 
 function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
   const buySignal = signals.buy;

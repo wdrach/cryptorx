@@ -1,6 +1,6 @@
 import { combineLatest, Subject } from "rxjs";
 import { map, takeUntil } from "rxjs/operators";
-import { stoch } from "../algs/SimpleStoch";
+import { stoch } from "../algs/FFStoch";
 import { CoinbaseGranularity, CoinbaseProCandle, CoinbaseWallet, writeState } from "../lib/lib";
 
 const main = async () => {
@@ -12,7 +12,7 @@ const main = async () => {
     const result = stoch(candles);
 
     const state = {
-        time: candles.time().pipe(map((val) => (new Date(val * 1000)).toLocaleString())),
+        time: candles.time().pipe(map((val) => (new Date(val * 1000)).toLocaleString().split(',').join(' '))),
         open: candles.open(),
         close: candles.close(),
         high: candles.high(),

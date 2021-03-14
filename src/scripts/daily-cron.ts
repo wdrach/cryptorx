@@ -1,6 +1,6 @@
 import { combineLatest, Subject } from "rxjs";
 import { map, takeUntil } from "rxjs/operators";
-import { stoch } from "../algs/Stoch";
+import { stoch } from "../algs/FStoch";
 import { CoinbaseProCandle, CoinbaseWallet, writeState } from "../lib/lib";
 
 const main = async () => {

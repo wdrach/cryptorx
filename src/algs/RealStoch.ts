@@ -1,5 +1,5 @@
-import { Observable, zip } from "rxjs";
-import { map, tap } from "rxjs/operators";
+import { zip } from "rxjs";
+import { map } from "rxjs/operators";
 import { AlgorithmResult, Candles, Crossover } from "../lib/lib";
 
 export function stoch(candles: Candles):AlgorithmResult {
@@ -28,8 +28,8 @@ export function stoch(candles: Candles):AlgorithmResult {
   const sell = zip(bear, overbought).pipe(map(([b, o]) => b && o));
 
   return {
-    sell: buy,
-    buy: sell,
+    sell: sell,
+    buy: buy,
     state: {
       stochK,
       stochD,
@@ -39,19 +39,4 @@ export function stoch(candles: Candles):AlgorithmResult {
       bear
     }
   };
-
-  /* this worked really well, saving for later
-  return {
-    sell: oversold,
-    buy: overbought,
-    state: {
-      stochK,
-      stochD,
-      overbought,
-      oversold,
-      bull,
-      bear
-    }
-  };
-  */
 }

@@ -1,11 +1,11 @@
 import { map } from "rxjs/operators";
-import { AlgorithmResult, Candles, Crossover } from "../lib/lib";
+import { AlgorithmResult, Candles } from "../lib/lib";
 
 export function stoch(candles: Candles):AlgorithmResult {
   const UPPER = 80;
   const LOWER = 20;
 
-  const stochK = candles.stochSlow();
+  const stochK = candles.ffstoch();
 
   // stoch is above upper
   const overbought = stochK.pipe(map((val) => val > UPPER));
