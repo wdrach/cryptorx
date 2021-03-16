@@ -1,7 +1,6 @@
-import { Observable } from "rxjs";
-import { CoinbaseProCandle, Crossover } from "../lib/lib";
+import { AlgorithmResult, CoinbaseProCandle, Crossover } from "../lib/lib";
 
-export function goldenAndDeathCross(candles: CoinbaseProCandle):Observable<boolean>[] {
+export default function(candles: CoinbaseProCandle):AlgorithmResult {
   const sma15 = candles.close().sma(15);
   const sma50 = candles.close().sma(50);
 
@@ -11,5 +10,14 @@ export function goldenAndDeathCross(candles: CoinbaseProCandle):Observable<boole
   // death cross
   const deathCross = new Crossover(sma50, sma15);
 
-  return [goldenCross, deathCross];
+  return {
+    buy: goldenCross,
+    sell: deathCross,
+    state: {
+      goldenCross,
+      deathCross,
+      sma15,
+      sma50
+    }
+  }
 }

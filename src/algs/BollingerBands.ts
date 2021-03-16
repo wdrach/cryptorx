@@ -1,7 +1,6 @@
-import { Observable } from "rxjs";
-import { CoinbaseProCandle, Crossover, NegativeCrossover } from "../lib/lib";
+import { AlgorithmResult, CoinbaseProCandle, Crossover, NegativeCrossover } from "../lib/lib";
 
-export function bollingerBands(candles: CoinbaseProCandle):Observable<boolean>[] {
+export default function(candles: CoinbaseProCandle): AlgorithmResult {
   const typical = candles.typical();
   const upper = typical.bollingerBand();
   const lower = typical.bollingerBand(false);
@@ -12,6 +11,14 @@ export function bollingerBands(candles: CoinbaseProCandle):Observable<boolean>[]
   // price dips below lower, buy signal
   const priceBelowLower = new NegativeCrossover(typical, lower);
 
-  // this is actually the opposite of what they say to do, but it works better than the real suggestion
-  return [priceOverUpper, priceBelowLower];
+  return {
+    sell: priceBelowLower,
+    buy: priceOverUpper,
+    state: {
+      priceOverUpper,
+      priceBelowLower,
+      upper,
+      lower
+    }
+  };
 }

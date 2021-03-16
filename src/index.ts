@@ -1,24 +1,21 @@
-import { forkJoin, Observable, combineLatest } from 'rxjs';
-import { map } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, Decision, log, writeState, SimulationWallet, Crossover, CoinbaseWallet, AlgorithmResult, CoinbaseGranularity } from './lib/lib';
-import { stoch } from './algs/FFStoch';
+import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
+import { first, map, takeUntil } from 'rxjs/operators';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, CoinbaseGranularity } from './lib/lib';
+
+const activeProduct = 'BTC-USD';
 
 function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
   const buySignal = signals.buy;
   const sellSignal = signals.sell;
 
-  let price = 0;
-  candles.close().subscribe((val) => {
-    if (!wallet.startingPrice) wallet.startingPrice = val;
-    wallet.endingPrice = val;
-    price = val
-  });
+  candles.open().pipe(first()).subscribe((val) => wallet.startingPrice = val);
 
-  combineLatest([buySignal, sellSignal])
-  .subscribe(([buy, sell]) => {
+  combineLatest([buySignal, sellSignal, candles.close()])
+  .subscribe(([buy, sell, close]) => {
+    wallet.endingPrice = close;
     if (sell === buy) return;
-    if (sell) wallet.sell(price);
-    if (buy) wallet.buy(price);
+    if (sell) wallet.sell(close);
+    if (buy) wallet.buy(close);
   })
 
   return candles;
@@ -110,99 +107,189 @@ function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, pri
   return candles;
 }
 
-let paperTrade = (filename?: string) => {
-  const candles = new CoinbaseProCandle('BTC-USD', 100, 86400);
+let paperTrade = (activeAlg: (candle: CoinbaseProCandle) => AlgorithmResult, activePeriod: CoinbaseGranularity, filename?: string) => {
+  const candles = new CoinbaseProCandle(activeProduct, 100, activePeriod);
   const price = new CoinbaseProPrice();
-  paperTransact(stoch(candles), candles, price, filename);
+  paperTransact(activeAlg(candles), candles, price, filename);
 }
 
-if (process.argv.length <= 2) {
-  // no file provided
-  const candles = new CoinbaseProCandle();
-
-  candles.open().subscribe(log('open'));
-
-  candles.high().subscribe(log('high'));
-  candles.low().subscribe(log('low'));
-
-  candles.close().subscribe(log('close'));
-
-  const price = new CoinbaseProPrice();
-  price.subscribe(log('price'));
-} else if (process.argv.findIndex((val) => val === '-s') !== -1) {
-  const RUN_SIMS = 10;
-
-  const sims = [];
-  const wallets: SimulationWallet[] = [];
-  for (let i = 0; i < RUN_SIMS; i++) {
-    const wallet = new SimulationWallet();
-    wallets.push(wallet);
-    const sim = new CoinbaseProSimulation(CoinbaseGranularity.HOUR, 365*24);
-
-    sims.push(transact(wallet, stoch(sim), sim));
-  }
-
-  forkJoin(sims).subscribe(() => {
-    let cash = 0;
-    let expected = 0;
-    let expectedProfit = 0;
-    let profitOverReplacement = 0;
-    let fees = 0;
-    let trades = 0;
-    let profit = 0;
-
-    let worstProfit = -1;
-    let bestProfit = -1;
-    let worstExpectedProfit = -1;
-    let bestExpectedProfit = -1;
-    let worstProfitOverReplacement = -1;
-    let bestProfitOverReplacement = -1;
+let liveTrade = async (activeAlg: (candle: CoinbaseProCandle) => AlgorithmResult, activePeriod: CoinbaseGranularity) => {
+  const wallet = new CoinbaseWallet();
+  await wallet.init();
+}
 
 
-    for (let wallet of wallets) {
-      cash += wallet.netWorth;
-      expected += wallet.expected;
-      expectedProfit += wallet.expectedProfit;
-      profit += wallet.profit;
-      profitOverReplacement += wallet.profitOverReplacement;
-      fees += wallet.fees;
-      trades += wallet.transactions;
+const main = async () => {
+  if (process.argv.length <= 2) {
+    // no file provided
+    const candles = new CoinbaseProCandle();
 
-      if (worstProfit === -1 || wallet.profit < worstProfit) {
-        worstExpectedProfit = wallet.expectedProfit;
-        worstProfit = wallet.profit;
-        worstProfitOverReplacement = wallet.profitOverReplacement;
-      }
+    candles.open().subscribe(log('open'));
 
-      if (bestProfit === -1 || wallet.profit > bestProfit) {
-        bestExpectedProfit = wallet.expectedProfit;
-        bestProfit = wallet.profit;
-        bestProfitOverReplacement = wallet.profitOverReplacement;
+    candles.high().subscribe(log('high'));
+    candles.low().subscribe(log('low'));
+
+    candles.close().subscribe(log('close'));
+
+    const price = new CoinbaseProPrice();
+    price.subscribe(log('price'));
+  } else {
+    let algName = process.argv[process.argv.length - 1]
+    let defaultAlg = false;
+    
+    if (algName.charAt(0) === '-') {
+      defaultAlg = true;
+      algName = 'BollingerBands';
+    }
+
+    const alg = `./algs/${algName}`;
+    let activeAlg: (candles: CoinbaseProCandle) => AlgorithmResult = require(alg).default;
+
+    const simIndex = process.argv.findIndex((val) => val === '-s');
+    const sim   = simIndex !== -1;
+    const paper = process.argv.findIndex((val) => val === '-p') !== -1;
+    const live  = process.argv.findIndex((val) => val === '-l') !== -1;
+    const cron  = process.argv.findIndex((val) => val === '-c') !== -1;
+
+    const timeIndex = process.argv.findIndex((val) => val === '-t');
+    let t: CoinbaseGranularity | undefined;
+    if (timeIndex !== -1) {
+      switch (process.argv[timeIndex + 1].toUpperCase()) {
+      case 'HOUR':
+        t = CoinbaseGranularity.HOUR;
+        break;
+      case 'DAY':
+        t = CoinbaseGranularity.DAY;
+        break;
       }
     }
 
-    expectedProfit = expectedProfit / RUN_SIMS;
-    profit = profit / RUN_SIMS;
-    profitOverReplacement = profitOverReplacement / RUN_SIMS;
+    if (!t) t = CoinbaseGranularity.HOUR;
 
-    console.log(`\nGot ${(cash / RUN_SIMS).toFixed(2)} in the bank`);
-    console.log(`would have ${(expected / RUN_SIMS).toFixed(2)} in the bank if I just held`);
-    console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
-    console.log(`you made ${(trades / RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)} per sim`);
-    console.log('--------------------------------------------------------------');
-    console.log(`The best sim made ${bestProfit.toFixed(2)} over ${bestExpectedProfit.toFixed(2)} for a POR of ${bestProfitOverReplacement.toFixed(2)}`)
-    console.log(`The worst sim made ${worstProfit.toFixed(2)} over ${worstExpectedProfit.toFixed(2)} for a POR of ${worstProfitOverReplacement.toFixed(2)}`)
-  });
-} else if (process.argv.findIndex((val) => val === '-p') !== -1) {
-  let filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;
-  if (filenameIndex && filenameIndex < process.argv.length) {
-    paperTrade(process.argv[filenameIndex]);
-  } else {
-    paperTrade();
+    const duration = 365 * 24 * 60 * 60 / t;
+
+    if (sim) {
+      const RUN_SIMS = 10;
+
+      const sims = [];
+      const wallets: SimulationWallet[] = [];
+      for (let i = 0; i < RUN_SIMS; i++) {
+        const wallet = new SimulationWallet();
+        wallets.push(wallet);
+        const sim = new CoinbaseProSimulation(t, duration, activeProduct);
+
+        sims.push(transact(wallet, activeAlg(sim), sim));
+      }
+
+      forkJoin(sims).subscribe(() => {
+        let cash = 0;
+        let expected = 0;
+        let expectedProfit = 0;
+        let profitOverReplacement = 0;
+        let fees = 0;
+        let trades = 0;
+        let profit = 0;
+
+        let worstProfit = -1;
+        let bestProfit = -1;
+        let worstExpectedProfit = -1;
+        let bestExpectedProfit = -1;
+        let worstProfitOverReplacement = -1;
+        let bestProfitOverReplacement = -1;
+
+
+        for (let wallet of wallets) {
+          cash += wallet.netWorth;
+          expected += wallet.expected;
+          expectedProfit += wallet.expectedProfit;
+          profit += wallet.profit;
+          profitOverReplacement += wallet.profitOverReplacement;
+          fees += wallet.fees;
+          trades += wallet.transactions;
+
+          if (worstProfit === -1 || wallet.profit < worstProfit) {
+            worstExpectedProfit = wallet.expectedProfit;
+            worstProfit = wallet.profit;
+            worstProfitOverReplacement = wallet.profitOverReplacement;
+          }
+
+          if (bestProfit === -1 || wallet.profit > bestProfit) {
+            bestExpectedProfit = wallet.expectedProfit;
+            bestProfit = wallet.profit;
+            bestProfitOverReplacement = wallet.profitOverReplacement;
+          }
+        }
+
+        expectedProfit = expectedProfit / RUN_SIMS;
+        profit = profit / RUN_SIMS;
+        profitOverReplacement = profitOverReplacement / RUN_SIMS;
+
+        console.log(`\nGot ${(cash / RUN_SIMS).toFixed(2)} in the bank`);
+        console.log(`would have ${(expected / RUN_SIMS).toFixed(2)} in the bank if I just held`);
+        console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
+        console.log(`you made ${(trades / RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)} per sim`);
+        console.log('--------------------------------------------------------------');
+        console.log(`The best sim made ${bestProfit.toFixed(2)} over ${bestExpectedProfit.toFixed(2)} for a POR of ${bestProfitOverReplacement.toFixed(2)}`)
+        console.log(`The worst sim made ${worstProfit.toFixed(2)} over ${worstExpectedProfit.toFixed(2)} for a POR of ${worstProfitOverReplacement.toFixed(2)}`)
+      });
+    } else if (paper) {
+      let filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;
+      if (filenameIndex && filenameIndex < process.argv.length) {
+        paperTrade(activeAlg, t, process.argv[filenameIndex]);
+      } else {
+        paperTrade(activeAlg, t);
+      }
+    } else if (live) {
+      console.log('Live trading is discouraged over cron trading, which is more stable and accurate over many days.');
+      liveTrade(activeAlg, t);
+    } else if (cron) {
+      if (!defaultAlg) {
+        switch (t) {
+          case CoinbaseGranularity.HOUR:
+            activeAlg = require('./algs/FFStoch').default;
+            break;
+          case CoinbaseGranularity.DAY:
+            activeAlg = require('./algs/FStoch').default;
+        }
+      }
+
+      const wallet = new CoinbaseWallet();
+      await wallet.init();
+
+      const candles = new CoinbaseProCandle('BTC-USD', 20, t);
+
+      const out = activeAlg(candles);
+
+      const unsubscriber = new Subject<void>()
+
+      combineLatest([out.buy, out.sell, candles.time(), candles.current]).pipe(takeUntil(unsubscriber)).subscribe(([buy, sell, time, ready]) => {
+          // if we're not ready, we're still in pre-data, not live data
+          if (!ready) return;
+
+          console.log(`time: ${(new Date(time * 1000)).toLocaleString()}`)
+          console.log(`ready - sell: ${sell} buy: ${buy}`);
+          unsubscriber.next();
+          unsubscriber.complete();
+          candles.complete();
+
+          if (sell && !buy) {
+              console.log('selling!');
+              wallet.sell();
+          } else if (buy && !sell) {
+              console.log('buying!');
+              wallet.buy();
+          } else {
+              console.log('sell === buy')
+          }
+
+          // exit
+          // TODO - we shouldn't have to manually do this if everything is completed properly
+          process.exit();
+      })
+    } else {
+      console.log('unsupported');
+    }
   }
-} else if (process.argv.findIndex((val) => val === '-l') !== -1) {
-  const wallet = new CoinbaseWallet();
-  wallet.init();
-} else {
-  console.log('unsupported');
 }
+
+main();

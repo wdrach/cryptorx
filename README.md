@@ -11,7 +11,7 @@ As of now, all algorithms are "all-in" meaning they will trade with 100% of the 
 ## Quick start
 Get a Raspberry Pi. Make sure you get a case, a power cord, an sd card, and an sd adapter. Make sure you can plug it into ethernet or this is going to be a lot harder. Put the case on it, install Ubuntu server, and plug it in. SSH into it, clone or download this repo into it. Run updates just to be safe. Run `crontab -e` and add this line:
 ```
-05 0 * * * /usr/local/bin/npm run daily-cron --prefix /home/ubuntu/Git/cryptorx/ >> /home/ubuntu/log.txt
+02 0 * * * /usr/local/bin/npm run daily-cron --prefix /home/ubuntu/Git/cryptorx/ >> /home/ubuntu/log.txt
 ```
 
 OR
@@ -43,20 +43,33 @@ COINBASE_PASSPHRASE="<passphrase provided TO Coinbase>"
 
 You can now run the scripts in this repo in "live mode."
 
-### Scratch pad
-`npm start -- <option>` runs the scratch pad (`index.js`). This is a completely random thing that is used for backtesting and trying new things. It is not stable.
+### Scratch pad / executable
+`npm start -- <mode> <options> <alg name>` runs the scratch pad (`index.js`). This is not super stable but I'm always improving it.
+
+#### Modes
+By default, the script will fetch some data and provide a debug log to make sure you're able to access Coinbase data correctly.
 
 -l runs a live trade mode
   * You need to have either a .env set with environment variables for
     * COINBASE_API_KEY - your api key
     * COINBASE_SECRET - your api secret (provided to you by Coinbase when creating a key)
     * COINBASE_PASSPHRASE - your api passphrase (provided by you to Coinbase when creating a key)
--s runs a simulation
+-s runs a year long simulation
+  * You can optionally specify a number after to run multiple simulations at once (the default is 10)
+  * You can add 
 -p runs a papertrade (a simulation, but with current data instead of historical data)
+-c runs a cronjob, which is a singular algorithm run to trade on live data right now, and then exit. If you don't specify an alg, it will choose the best known alg for the time period. 
+
+#### Options
+-t specifies the time period for the algorithm to run against.
+  * This can be DAY or HOUR
 -f + a filename with NO EXTENSION outputs debug csv files
 
 ### Best Algs
 The best algs I've found for a given time period are noted in scripts.
 
 #### 1 day
-`npm run daily-cron` is meant to be run once a day. Coinbase "closes" their day at midnight UTC, so for best results run this script as a daily cronjob, scheduled for a few minutes (say, 5) after midnight UTC.
+`npm run daily-cron` is meant to be run once a day. Coinbase "closes" their day at midnight UTC, so for best results run this script as a daily cronjob, scheduled for a few minutes (say, 2) after midnight UTC.
+
+#### 1 hour 
+`npm run hourly-cron` is meant to be run once an hour.

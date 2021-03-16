@@ -2,7 +2,7 @@ import { Observable, zip } from "rxjs";
 import { map } from "rxjs/operators";
 import { AlgorithmResult, Candles, Crossover } from "../lib/lib";
 
-export function stoch(candles: Candles):AlgorithmResult {
+export default function(candles: Candles):AlgorithmResult {
   const UPPER = 80;
   const LOWER = 20;
 

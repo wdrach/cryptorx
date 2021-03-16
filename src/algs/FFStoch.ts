@@ -1,7 +1,7 @@
 import { map } from "rxjs/operators";
 import { AlgorithmResult, Candles } from "../lib/lib";
 
-export function stoch(candles: Candles):AlgorithmResult {
+export default function(candles: Candles):AlgorithmResult {
   const UPPER = 80;
   const LOWER = 20;
 
