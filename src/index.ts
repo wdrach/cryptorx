@@ -1,6 +1,6 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { first, map, takeUntil } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, CoinbaseGranularity } from './lib/lib';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, CoinbaseGranularity, LogLevel } from './lib/lib';
 
 const activeProduct = 'BTC-USD';
 
@@ -124,15 +124,8 @@ const main = async () => {
     // no file provided
     const candles = new CoinbaseProCandle();
 
-    candles.open().subscribe(log('open'));
-
-    candles.high().subscribe(log('high'));
-    candles.low().subscribe(log('low'));
-
-    candles.close().subscribe(log('close'));
-
     const price = new CoinbaseProPrice();
-    price.subscribe(log('price'));
+    price.subscribe((price) => log(LogLevel.SUCCESS)(price.toFixed(2)));
   } else {
     let algName = process.argv[process.argv.length - 1]
     let defaultAlg = false;
@@ -150,6 +143,8 @@ const main = async () => {
     const paper = process.argv.findIndex((val) => val === '-p') !== -1;
     const live  = process.argv.findIndex((val) => val === '-l') !== -1;
     const cron  = process.argv.findIndex((val) => val === '-c') !== -1;
+    const sellTest  = process.argv.findIndex((val) => val === '--sell-test') !== -1;
+    const buyTest  = process.argv.findIndex((val) => val === '--buy-test') !== -1;
 
     const timeIndex = process.argv.findIndex((val) => val === '-t');
     let t: CoinbaseGranularity | undefined;
@@ -286,6 +281,14 @@ const main = async () => {
           // TODO - we shouldn't have to manually do this if everything is completed properly
           process.exit();
       })
+    } else if (sellTest || buyTest) {
+      const wallet = new CoinbaseWallet();
+      await wallet.init();
+      if (sellTest) {
+        wallet.sell();
+      } else {
+        wallet.buy();
+      }
     } else {
       console.log('unsupported');
     }

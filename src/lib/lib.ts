@@ -4,6 +4,7 @@ import { bufferCount, map, pluck } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
+import chalk from 'chalk';
 import { promises } from 'fs';
 
 import dotenv from 'dotenv';
@@ -386,7 +387,7 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
   const endDate = new Date(current);
   const endStr = endDate.toISOString();
 
-  console.log(`fetching candles for ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`)
+  log(LogLevel.INFO)(`fetching candles for ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`)
 
   // bump cur by 1 more candle before updating so we don't overlap that minute
   current += period*1000;
@@ -398,7 +399,7 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
   try {
     data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`)
   } catch (e) {
-    console.log('Got an error, likely hit API limits');
+    log(LogLevel.ERROR)('Got an error, likely hit API limits');
     let prom = new Promise<Candle[]>((resolve) => {
       setTimeout(async () => {
         resolve(await _fetchCandles(product, prefetch, period, inputCurrent, inputEndTime));
@@ -663,8 +664,23 @@ export async function writeState(values: Record<string, Observable<any>>, writeO
   })
 }
 
-export function log(type: string): (val: any) => void {
-  return (val: any) => console.log(`${type}: ${val}`);
+export enum LogLevel {
+  INFO = 'info',
+  ERROR = 'error',
+  WARN = 'warn',
+  SUCCESS = 'success'
+}
+export function log(level: LogLevel): (val: string) => void {
+  switch (level) {
+  case LogLevel.ERROR:
+    return (val: any) => console.log(chalk.bgRed('ERROR:') + '  ', val);
+  case LogLevel.WARN:
+    return (val: any) => console.log(chalk.bgYellow('WARN:') + '   ', val);
+  case LogLevel.SUCCESS:
+    return (val: any) => console.log(chalk.bgGreen('SUCCESS:'), val);
+  default:
+    return (val: any) => console.log(chalk.bgBlue('INFO:') + '   ', val);
+  }
 }
 
 interface Wallet {
@@ -740,7 +756,7 @@ export class CoinbaseWallet implements Wallet {
     }
 
     if (method === 'POST') {
-      return axios.post(COINBASE_API + endpoint, request, {headers}).catch((err) => console.log(err.response.data.message));
+      return axios.post(COINBASE_API + endpoint, request, {headers}).catch((err) => log(LogLevel.ERROR)(err.response.data.message));
     } else {
       return axios.get(COINBASE_API + endpoint, {headers})
     }
@@ -756,8 +772,8 @@ export class CoinbaseWallet implements Wallet {
     this.coin = parseFloat(coinAccount.available);
 
     this.inMarket = this.coin > .0001
-    console.log(`USD: ${this.dollars}, ${this.product.split('-')[0]}: ${this.coin}`);
-    console.log(`In market: ${this.inMarket}`);
+    log(LogLevel.SUCCESS)(`USD: ${this.dollars}, ${this.product.split('-')[0]}: ${this.coin}`);
+    log(LogLevel.SUCCESS)(`In market: ${this.inMarket}`);
   }
 
   limitBuy(price: number) {
@@ -771,7 +787,7 @@ export class CoinbaseWallet implements Wallet {
   }
 
   marketBuy() {
-    console.log(`buying \$${this.dollars} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
+    log(LogLevel.INFO)(`buying \$${this.dollars} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
     this._signAndSend('/orders', {
       product_id: this.product,
       type: 'market',
@@ -799,7 +815,7 @@ export class CoinbaseWallet implements Wallet {
   }
 
   marketSell() {
-    console.log(`selling ${this.coin} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
+    log(LogLevel.INFO)(`selling ${this.coin} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
     this._signAndSend('/orders', {
       product_id: this.product,
       type: 'market',
