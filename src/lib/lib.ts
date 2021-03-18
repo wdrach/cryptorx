@@ -792,7 +792,7 @@ export class CoinbaseWallet implements Wallet {
       product_id: this.product,
       type: 'market',
       side: 'buy',
-      funds: Math.floor(this.dollars).toFixed(2)
+      funds: (Math.floor(this.dollars * 100)/100).toFixed(2)
     });
   }
 

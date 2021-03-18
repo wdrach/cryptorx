@@ -267,19 +267,21 @@ const main = async () => {
           unsubscriber.complete();
           candles.complete();
 
-          if (sell && !buy) {
+          // TODO - this really shouldn't be necessary, but we want to wait extra time just in the off chance
+          // we hit a coinbase limit
+          setTimeout(() => {
+            if (sell && !buy) {
               console.log('selling!');
               wallet.sell();
-          } else if (buy && !sell) {
+            } else if (buy && !sell) {
               console.log('buying!');
               wallet.buy();
-          } else {
+            } else {
               console.log('sell === buy')
-          }
+            }
 
-          // exit
-          // TODO - we shouldn't have to manually do this if everything is completed properly
-          process.exit();
+            process.exit();
+          }, 2000)
       })
     } else if (sellTest || buyTest) {
       const wallet = new CoinbaseWallet();
