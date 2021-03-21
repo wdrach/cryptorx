@@ -280,7 +280,9 @@ const main = async () => {
               console.log('sell === buy')
             }
 
-            process.exit();
+            setTimeout(() => {
+              process.exit();
+            }, 2000)
           }, 2000)
       })
     } else if (sellTest || buyTest) {
