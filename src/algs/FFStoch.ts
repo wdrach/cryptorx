@@ -1,25 +1,25 @@
-import { map } from "rxjs/operators";
-import { AlgorithmResult, Candles } from "../lib/lib";
+import { map } from 'rxjs/operators';
+import { AlgorithmResult, Candles } from '../lib/lib';
 
 export default function(candles: Candles):AlgorithmResult {
-  const UPPER = 80;
-  const LOWER = 20;
+    const UPPER = 80;
+    const LOWER = 20;
 
-  const stochK = candles.ffstoch();
+    const stochK = candles.ffstoch();
 
-  // stoch is above upper
-  const overbought = stochK.pipe(map((val) => val > UPPER));
+    // stoch is above upper
+    const overbought = stochK.pipe(map((val) => val > UPPER));
   
-  // stoch is below lower
-  const oversold = stochK.pipe(map((val) => val < LOWER));
+    // stoch is below lower
+    const oversold = stochK.pipe(map((val) => val < LOWER));
 
-  return {
-    sell: oversold,
-    buy: overbought,
-    state: {
-      stochK,
-      overbought,
-      oversold,
-    }
-  };
+    return {
+        sell: oversold,
+        buy: overbought,
+        state: {
+            stochK,
+            overbought,
+            oversold,
+        }
+    };
 }
