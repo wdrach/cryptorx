@@ -239,7 +239,7 @@ const main = async () => {
             console.log('Live trading is discouraged over cron trading, which is more stable and accurate over many days.');
             liveTrade();
         } else if (cron) {
-            if (!defaultAlg) {
+            if (defaultAlg) {
                 switch (t) {
                 case CoinbaseGranularity.HOUR:
                     // eslint-disable-next-line
