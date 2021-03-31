@@ -3,7 +3,7 @@ import { first, map, takeUntil } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
-const activeProduct = CoinbaseProduct.BTC_USD;
+const activeProduct = CoinbaseProduct.ETH_USD;
 
 function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
     const buySignal = signals.buy;
