@@ -65,7 +65,7 @@ function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, pri
         console.clear();
         console.log(`Time: ${(new Date(t * 1000)).toLocaleString()}`);
         console.log(`Current Price: ${price}`);
-        console.log(`${wallet.coin}BTC`);
+        console.log(`${wallet.coin}ETH`);
         console.log(`$${wallet.dollars}`);
 
         if (wallet.transactions > 0) {
@@ -73,7 +73,7 @@ function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, pri
             if (wallet.dollars) {
                 console.log(`Sold at ${wallet.lastTransaction.toLocaleString()}`);
                 console.log('--------------------------------------------------------------------');
-                console.log(`Sold ${wallet.coin.toFixed(4)}BTC at $${wallet.lastTransactionPrice.toFixed(2)}`);
+                console.log(`Sold ${wallet.coin.toFixed(4)}ETH at $${wallet.lastTransactionPrice.toFixed(2)}`);
                 console.log(`Fees were $${wallet.lastFee.toFixed(2)} for a net of $${wallet.dollars.toFixed(2)}`);
                 console.log('--------------------------------------------------------------------');
                 console.log(`Right now you have a profit of ${wallet.profit.toFixed(2)}%.`);
@@ -82,7 +82,7 @@ function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, pri
             } else if (wallet.coin) {
                 console.log(`Bought at ${wallet.lastTransaction.toLocaleString()}`);
                 console.log('--------------------------------------------------------------------');
-                console.log(`Bought ${wallet.coin.toFixed(4)}BTC at $${wallet.lastTransactionPrice.toFixed(2)}`);
+                console.log(`Bought ${wallet.coin.toFixed(4)}ETH at $${wallet.lastTransactionPrice.toFixed(2)}`);
                 console.log(`Fees were ${wallet.lastFee.toFixed(2)} for a net cost of $${wallet.dollars.toFixed(2)}`);
                 console.log('--------------------------------------------------------------------');
                 console.log(`Right now you have a profit of ${wallet.profit.toFixed(2)}%.`);

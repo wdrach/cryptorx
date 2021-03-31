@@ -332,7 +332,7 @@ export class Price extends Subject<number> {
 }
 
 export class CoinbaseProPrice extends Price {
-    constructor(product: CoinbaseProduct = CoinbaseProduct.BTC_USD) {
+    constructor(product: CoinbaseProduct = CoinbaseProduct.ETH_USD) {
         super();
 
         const ws = new WS('wss://ws-feed.pro.coinbase.com');
@@ -531,12 +531,12 @@ export class CoinbaseProCandle extends Candles {
   /**
    * Constructs and prefetches a Subject of historical CoinbaseProCandles
    * 
-   * @param product A string of the Coinbase product to query for, defaults to 'BTC-USD'
+   * @param product A string of the Coinbase product to query for, defaults to 'ETH-USD'
    * @param prefetch The number of candles to prefetch
    * @param period The granularity, in seconds, of how large the candles are
    * @param timestamp For testing & simulation only, use to fetch a set number of historical candles starting at this timestamp
    */
-  constructor(product: CoinbaseProduct = CoinbaseProduct.BTC_USD, prefetch = 300, period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, timestamp?: number) {
+  constructor(product: CoinbaseProduct = CoinbaseProduct.ETH_USD, prefetch = 300, period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, timestamp?: number) {
       super();
       this._prefetch = prefetch;
 
@@ -602,7 +602,7 @@ export class CoinbaseProCandle extends Candles {
 }
 
 export class CoinbaseProSimulation extends CoinbaseProCandle {
-    constructor(period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, time = 300, product: CoinbaseProduct = CoinbaseProduct.BTC_USD) {
+    constructor(period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, time = 300, product: CoinbaseProduct = CoinbaseProduct.ETH_USD) {
         let last = Date.now() - (time * period * 1000);
         if (last < COINBASE_EARLIEST_TIMESTAMP) {
             last = COINBASE_EARLIEST_TIMESTAMP;
@@ -711,7 +711,7 @@ export class CoinbaseWallet implements Wallet {
 
   inMarket = false;
 
-  product = 'BTC-USD';
+  product = 'ETH-USD';
 
   transactionStream = new Subject<Date>();
   lastTransaction = new Date(Date.now());
@@ -778,7 +778,7 @@ export class CoinbaseWallet implements Wallet {
   }
 
   marketBuy(): void {
-      log(LogLevel.INFO)(`buying $${this.dollars} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
+      log(LogLevel.INFO)(`buying $${this.dollars} worth of ETH at ${(new Date(Date.now())).toLocaleString()}`);
       this._signAndSend('/orders', {
           product_id: this.product,
           type: 'market',
@@ -806,7 +806,7 @@ export class CoinbaseWallet implements Wallet {
   }
 
   marketSell(): void {
-      log(LogLevel.INFO)(`selling ${this.coin} worth of BTC at ${(new Date(Date.now())).toLocaleString()}`);
+      log(LogLevel.INFO)(`selling ${this.coin} worth of ETH at ${(new Date(Date.now())).toLocaleString()}`);
       this._signAndSend('/orders', {
           product_id: this.product,
           type: 'market',
@@ -851,7 +851,7 @@ export class SimulationWallet implements Wallet {
   lastTransaction: Date = new Date(Date.now());
   lastTransactions: Date[] = [];
   transactionFee = .005;
-  product = 'BTC-USD';
+  product = 'ETH-USD';
 
   constuctor(startingCash = 1000, fee: number = COINBASE_TRANSACTION_FEE): void {
       this.dollars = startingCash;
