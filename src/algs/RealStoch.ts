@@ -6,8 +6,8 @@ export default function(candles: Candles):AlgorithmResult {
     const UPPER = 80;
     const LOWER = 20;
 
-    const stochK = candles.stochSlow();
-    const stochD = candles.stochSlowD();
+    const stochK = candles.stoch();
+    const stochD = candles.stochD();
 
     // stoch is above upper
     const overbought = stochK.pipe(map((val) => val > UPPER));

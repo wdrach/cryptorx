@@ -1,5 +1,5 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
-import { first, map, takeUntil } from 'rxjs/operators';
+import { first, map, takeUntil, withLatestFrom } from 'rxjs/operators';
 import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
@@ -11,13 +11,12 @@ function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: C
 
     candles.open().pipe(first()).subscribe((val) => wallet.startingPrice = val);
 
-    combineLatest([buySignal, sellSignal, candles.close()])
-        .subscribe(([buy, sell, close]) => {
-            wallet.endingPrice = close;
-            if (sell === buy) return;
-            if (sell) wallet.sell(close);
-            if (buy) wallet.buy(close);
-        });
+    candles.close().pipe(withLatestFrom(combineLatest([buySignal, sellSignal]))).subscribe(([close, [buy, sell]]) => {
+        wallet.endingPrice = close;
+        if (sell === buy) return;
+        if (sell) wallet.sell(close);
+        if (buy) wallet.buy(close);
+    });
 
     return candles;
 }

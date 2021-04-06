@@ -14,8 +14,8 @@ export default function(candles: Candles):AlgorithmResult {
     const oversold = stochK.pipe(map((val) => val < LOWER));
 
     return {
-        sell: oversold,
-        buy: overbought,
+        sell: overbought,
+        buy: oversold,
         state: {
             stochK,
             overbought,
