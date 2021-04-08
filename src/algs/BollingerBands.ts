@@ -12,8 +12,8 @@ export default function(candles: CoinbaseProCandle): AlgorithmResult {
     const priceBelowLower = new NegativeCrossover(typical, lower);
 
     return {
-        sell: priceBelowLower,
-        buy: priceOverUpper,
+        sell: priceOverUpper,
+        buy: priceBelowLower,
         state: {
             priceOverUpper,
             priceBelowLower,

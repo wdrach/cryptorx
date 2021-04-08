@@ -137,12 +137,6 @@ export class Price extends Subject<number> {
       return val * commonTerm + currentEma * (1 - commonTerm);
   }
 
-  // I'm not saying I condone messing up math, I'm just saying there isn't always
-  // a reason for everything
-  _fema(currentEma: number, val: number, smoothing: number): number {
-      return smoothing * (val - currentEma) + val;
-  }
-
   /**
    * Take the exponential moving average over a given period
    * 
@@ -166,31 +160,6 @@ export class Price extends Subject<number> {
               return this._sma(values);
           } else {
               currentEma = this._ema(currentEma, values[len - 1], smoothingConstant);
-              return currentEma;
-          }
-      });
-
-      return new Price(this.pipe(bufferCount(period, 1), reducer));
-  }
-
-  /** It's EMA with a twist! (the twist is it doesn't do what it's supposed to) */
-  fema(period: number, smoothing?: number): Price {
-      const smoothingConstant = smoothing || 2/(period + 1);
-
-      let currentEma = 0;
-      const reducer = map((values: number[]) => {
-          const len = values.length;
-
-          // no EMA? Start with an SMA
-          if (!currentEma) {
-              if (values.length >= (period - 1)) {
-                  currentEma = this._sma(values);
-                  return currentEma;
-              }
-
-              return this._sma(values);
-          } else {
-              currentEma = this._fema(currentEma, values[len - 1], smoothingConstant);
               return currentEma;
           }
       });
@@ -440,28 +409,6 @@ export class Candles extends Subject<Candle> {
         return this.pipe(pluck('volume'));
     }
 
-    // fstoch, or "fucked stoch" is my initial fuck up of the stochastic oscillator
-    // that turned out to be incredibly profitable when used correctly
-    fstoch(period = 14): Price {
-        const reducer = map((values: Candle[]) => {
-            const lastValue = values[values.length - 1];
-            const firstValue = values[0];
-
-            return 100 * (lastValue.close - firstValue.low) / (firstValue.high - firstValue.low);
-        });
-
-        return new Price(this.pipe(bufferCount(period, 1), reducer));
-    }
-    fstochD(period = 14, avgPeriod = 3): Price {
-        return this.stoch(period).fema(avgPeriod);
-    }
-    fstochSlow(period = 14, avgPeriod = 3): Price {
-        return this.stochD(period, avgPeriod);
-    }
-    fstochSlowD(period = 14, avgPeriod = 3, secondAvgPeriod = 3): Price {
-        return this.stochSlow(period, avgPeriod).fema(secondAvgPeriod);
-    }
-
     /**
    * The stochastic %K, defined as:
    *  100 * (C - L(P))/(H(P) - L(P))
@@ -512,11 +459,6 @@ export class Candles extends Subject<Candle> {
    */
     stochSlowD(period = 14, avgPeriod = 3, secondAvgPeriod = 3): Price {
         return this.stochSlow(period, avgPeriod).ema(secondAvgPeriod);
-    }
-
-    // fucked fucked stoch. do I need to say anything else?
-    ffstoch(period = 14, avgPeriod = 3): Price {
-        return this.stoch(period).fema(avgPeriod);
     }
 }
 
