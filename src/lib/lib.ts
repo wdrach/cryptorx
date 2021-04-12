@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { bufferCount, map, pluck } from 'rxjs/operators';
+import { buffer, bufferCount, map, pluck, scan } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -9,6 +9,7 @@ import { promises } from 'fs';
 
 import dotenv from 'dotenv';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_API, COINBASE_EARLIEST_TIMESTAMP, COINBASE_TRANSACTION_FEE, LogLevel } from './constants';
+import { FindValueOperator, FindValueSubscriber } from 'rxjs/internal/operators/find';
 dotenv.config();
 
 
@@ -292,6 +293,24 @@ export class Price extends Subject<number> {
       return this.macdSignalOf();
   }
 
+  /**
+   * Returns the price rate of change, defined as:
+   * 100 * (price(n) - price(n - p)) / price(n - p)
+   * 
+   * @period the period to read the rate of change for
+   */
+  roc(period = 12): Price {
+      const reducer = map((values: number[]) => {
+          const firstPrice = values[0];
+          const lastPrice = values[values.length - 1];
+
+          return 100 * (lastPrice - firstPrice) / firstPrice;
+      });
+
+      return new Price(this.pipe(bufferCount(period + 1, 1), reducer));
+  }
+
+
   complete(): void {
       if (this._subscription) {
           this._subscription.unsubscribe();
@@ -459,6 +478,108 @@ export class Candles extends Subject<Candle> {
    */
     stochSlowD(period = 14, avgPeriod = 3, secondAvgPeriod = 3): Price {
         return this.stochSlow(period, avgPeriod).ema(secondAvgPeriod);
+    }
+
+    /**
+     * The Relative Strength Index (RSI) is defined as:
+     * RSI = 100 – 100/ (1 + RS)
+     * RS = Average Gain of n days UP  / Average Loss of n days DOWN
+     * 
+     * @param period the period to compare against
+     */
+    rsi(period = 14): Price {
+        const reducer = map((values: Candle[]) => {
+            let upCount = 0;
+            let upGain = 0;
+            let downCount = 0;
+            let downGain = 0;
+
+            for (const value of values) {
+                if (value.open > value.close) {
+                    downCount++;
+                    downGain += (value.close - value.open) / value.open;
+                } else {
+                    upCount++;
+                    upGain += (value.close - value.open) / value.open;
+                }
+            }
+
+            const rs = (upGain / upCount) / (downGain / downCount);
+
+            return 100 - 100 / (1 + rs);
+        });
+
+        return new Price(this.pipe(bufferCount(period, 1), reducer));
+    }
+
+    /**
+     * The smoothed RSI is a slightly smoothed version of the RSI which uses
+     * the previous values to weight the current value, much like an EMA does
+     * compared to an SMA.
+     * 
+     * @param period the period to compare against
+     */
+    smoothedRsi(period = 14): Price {
+        let previousAverageGain = 0;
+        let previousAverageLoss = 0;
+        const reducer = map((values: Candle[]) => {
+            if (!previousAverageGain) {
+                let upCount = 0;
+                let upGain = 0;
+                let downCount = 0;
+                let downGain = 0;
+
+                for (const value of values) {
+                    if (value.open > value.close) {
+                        downCount++;
+                        downGain += (value.close - value.open) / value.open;
+                    } else {
+                        upCount++;
+                        upGain += (value.close - value.open) / value.open;
+                    }
+                }
+
+                previousAverageGain = upGain / upCount;
+                previousAverageLoss = downGain / downCount;
+
+                const rs = (previousAverageGain) / (previousAverageLoss);
+
+                return 100 - 100 / (1 + rs);
+            } else {
+                const val = values[values.length - 1];
+                if (val.open > val.close) {
+                    previousAverageGain = (previousAverageGain * (period - 1)) / period;
+                    previousAverageLoss = ((previousAverageLoss * (period - 1)) + ((val.close - val.open) / val.open))/period;
+                } else {
+                    previousAverageLoss = (previousAverageLoss * (period - 1)) / period;
+                    previousAverageGain = ((previousAverageGain * (period - 1)) + ((val.close - val.open) / val.open))/period;
+                }
+
+                const rs = (previousAverageGain) / (previousAverageLoss);
+
+                return 100 - 100 / (1 + rs);
+            }
+        });
+
+        return new Price(this.pipe(bufferCount(period, 1), reducer));
+    }
+
+    /**
+     * Returns the on balance volume stream, defined as:
+     * 
+     * OBV(n - 1) + {vol if close > open, - vol if close < open, 0 else}
+     */
+    obv(): Price {
+        const scanner = scan((acc: number, val: Candle) => {
+            if (val.close > val.open) {
+                return acc + val.volume;
+            } else if (val.close < val.open) {
+                return acc - val.volume;
+            }
+            return acc;
+        }, 0);
+
+        return new Price(this.pipe(scanner));
     }
 }
 

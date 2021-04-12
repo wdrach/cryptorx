@@ -28,8 +28,8 @@ export default function(candles: Candles):AlgorithmResult {
     const sell = zip(bear, overbought).pipe(map(([b, o]) => b && o));
 
     return {
-        sell: sell,
-        buy: buy,
+        sell,
+        buy,
         state: {
             stochK,
             stochD,
