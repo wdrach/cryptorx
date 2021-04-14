@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { buffer, bufferCount, map, pluck, scan } from 'rxjs/operators';
+import { bufferCount, map, pluck, scan } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -9,7 +9,6 @@ import { promises } from 'fs';
 
 import dotenv from 'dotenv';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_API, COINBASE_EARLIEST_TIMESTAMP, COINBASE_TRANSACTION_FEE, LogLevel } from './constants';
-import { FindValueOperator, FindValueSubscriber } from 'rxjs/internal/operators/find';
 dotenv.config();
 
 
@@ -580,6 +579,31 @@ export class Candles extends Subject<Candle> {
         }, 0);
 
         return new Price(this.pipe(scanner));
+    }
+
+    /**
+     * The vwma or volume weighted moving average is a moving average
+     * that weighs based on the trade volume in a given period to provide
+     * a more dynamic view of price action.
+     * 
+     * @param period the period to take the average across
+     */
+    vwma(period = 14): Price {
+        const reducer = map((values: Candle[]) => {
+            let volumeWeightedPrice = 0;
+            let totalVolume = 0;
+
+            for (const val of values) {
+                const typical = (val.high + val.low + val.close)/3;
+                const vol = val.volume;
+
+                volumeWeightedPrice += typical * vol;
+                totalVolume += vol;
+            }
+
+            return volumeWeightedPrice/totalVolume;
+        });
+        return new Price(this.pipe(bufferCount(period, 1), reducer));
     }
 }
 

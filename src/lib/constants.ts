@@ -74,4 +74,4 @@ export enum LogLevel {
 
 export const COINBASE_API = 'https://api.pro.coinbase.com';
 export const COINBASE_EARLIEST_TIMESTAMP = 1437428220000;
-export const COINBASE_TRANSACTION_FEE = .005;
+export const COINBASE_TRANSACTION_FEE = .0035;

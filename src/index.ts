@@ -242,11 +242,11 @@ const main = async () => {
                 switch (t) {
                 case CoinbaseGranularity.HOUR:
                     // eslint-disable-next-line
-                    activeAlg = require('./algs/FFStoch').default;
+                    activeAlg = require('./algs/VolumeWeightedCross').default;
                     break;
                 case CoinbaseGranularity.DAY:
                     // eslint-disable-next-line
-                    activeAlg = require('./algs/FStoch').default;
+                    activeAlg = require('./algs/VolumeWeightedCross').default;
                 }
             }
 
