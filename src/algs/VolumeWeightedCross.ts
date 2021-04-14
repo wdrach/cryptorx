@@ -1,15 +1,14 @@
 import { AlgorithmResult, CoinbaseProCandle, Crossover } from '../lib/lib';
 
 export default function(candles: CoinbaseProCandle):AlgorithmResult {
-    // 10, 20 - DAY : 229.05 234.22, 239.88
-    const vwma30 = candles.vwma(10);
-    const vwma50 = candles.vwma(20);
+    const vwma10 = candles.vwma(10);
+    const vwma20 = candles.vwma(20);
 
     // golden cross
-    const goldenCross = new Crossover(vwma30, vwma50);
+    const goldenCross = new Crossover(vwma10, vwma20);
 
     // death cross
-    const deathCross = new Crossover(vwma50, vwma30);
+    const deathCross = new Crossover(vwma20, vwma10);
 
     return {
         buy: goldenCross,
@@ -17,8 +16,8 @@ export default function(candles: CoinbaseProCandle):AlgorithmResult {
         state: {
             goldenCross,
             deathCross,
-            vwma30,
-            vwma50
+            vwma10,
+            vwma20
         }
     };
 }
