@@ -1,9 +1,8 @@
 import { AlgorithmResult, Candles, Crossover } from '../lib/lib';
 
 export default function(candles: Candles):AlgorithmResult {
-    const typical = candles.typical();
-    const macd = typical.macd();
-    const signal = typical.macdSignal();
+    const macd = candles.volumeWeightedMacd();
+    const signal = candles.volumeWeightedMacdSignal();
 
     // macd crosses over signal
     const bull = new Crossover(macd, signal);
@@ -12,8 +11,8 @@ export default function(candles: Candles):AlgorithmResult {
     const bear = new Crossover(signal, macd);
 
     return {
-        sell: bull,
-        buy: bear,
+        sell: bear,
+        buy: bull,
         state: {
             bull,
             bear,

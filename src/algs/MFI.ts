@@ -2,22 +2,22 @@ import { map } from 'rxjs/operators';
 import { AlgorithmResult, Candles } from '../lib/lib';
 
 export default function(candles: Candles):AlgorithmResult {
-    const UPPER = 75;
-    const LOWER = 20;
+    const UPPER = 90;
+    const LOWER = 30;
 
-    const rsi = candles.rsi();
+    const mfi = candles.mfi();
 
     // rsi is above upper
-    const overbought = rsi.pipe(map((val) => val > UPPER));
+    const overbought = mfi.pipe(map((val) => val > UPPER));
   
     // rsi is below lower
-    const oversold = rsi.pipe(map((val) => val < LOWER));
+    const oversold = mfi.pipe(map((val) => val < LOWER));
 
     return {
         sell: overbought,
         buy: oversold,
         state: {
-            rsi,
+            mfi,
             overbought,
             oversold,
         }

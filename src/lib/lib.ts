@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { bufferCount, map, pluck, scan } from 'rxjs/operators';
+import { bufferCount, map, pluck, scan, skip } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -57,6 +57,15 @@ volume: ${this.volume}
   }
 }
 
+const _bollingerBand = (upper: boolean, ma: number, deviations: number, stddev: number): number => {
+    return upper ? (ma + (deviations * stddev)) : (ma - (deviations * stddev));
+};
+
+const _stddev = (sma: number, values: number[]): number => {
+    const variance = values.reduce((acc, val) => acc + Math.pow((val - sma), 2), 0) / values.length;
+    return Math.sqrt(variance);
+};
+
 /** A class for handling number streams with a mathematical boost */
 export class Price extends Subject<number> {
   _subscription: Subscription | undefined;
@@ -84,10 +93,6 @@ export class Price extends Subject<number> {
       return (values.reduce((a, b) => a + b, 0) / values.length);
   }
 
-  _stddev(sma: number, values: number[]): number {
-      const variance = values.reduce((acc, val) => acc + Math.pow((val - sma), 2), 0) / values.length;
-      return Math.sqrt(variance);
-  }
 
   /**
    * Take the simple moving average over a given period
@@ -197,9 +202,6 @@ export class Price extends Subject<number> {
       return this.ema(200);
   }
 
-  _bollingerBand(upper: boolean, ma: number, deviations: number, stddev: number): number {
-      return upper ? (ma + (deviations * stddev)) : (ma - (deviations * stddev));
-  }
 
   /**
    * Create a single, simple moving average based Bollinger Band
@@ -211,9 +213,9 @@ export class Price extends Subject<number> {
   bollingerBand(upper = true, period = 20, deviations = 2): Price {
       const reducer = map((values: number[]) => {
           const sma = this._sma(values);
-          const stddev = this._stddev(sma, values);
+          const stddev = _stddev(sma, values);
 
-          return this._bollingerBand(upper, sma, deviations, stddev);
+          return _bollingerBand(upper, sma, deviations, stddev);
       });
 
       return new Price(this.pipe(bufferCount(period, 1), reducer));
@@ -247,9 +249,9 @@ export class Price extends Subject<number> {
               currentEma = this._ema(currentEma, values[len - 1], smoothingConstant);
               ema = currentEma;
           }
-          const stddev = this._stddev(ema, values);
+          const stddev = _stddev(ema, values);
 
-          return this._bollingerBand(upper, ema, deviations, stddev);
+          return _bollingerBand(upper, ema, deviations, stddev);
       });
 
       return new Price(this.pipe(bufferCount(period, 1), reducer));
@@ -581,6 +583,21 @@ export class Candles extends Subject<Candle> {
         return new Price(this.pipe(scanner));
     }
 
+    _vwma(values: Candle[]): number {
+        let volumeWeightedPrice = 0;
+        let totalVolume = 0;
+
+        for (const val of values) {
+            const typical = (val.high + val.low + val.close)/3;
+            const vol = val.volume;
+
+            volumeWeightedPrice += typical * vol;
+            totalVolume += vol;
+        }
+
+        return volumeWeightedPrice/totalVolume;
+    }
+
     /**
      * The vwma or volume weighted moving average is a moving average
      * that weighs based on the trade volume in a given period to provide
@@ -589,21 +606,102 @@ export class Candles extends Subject<Candle> {
      * @param period the period to take the average across
      */
     vwma(period = 14): Price {
+        const reducer = map(this._vwma);
+        return new Price(this.pipe(bufferCount(period, 1), reducer));
+    }
+
+    /**
+     * Create a single, volume weighted moving average based Bollinger Band
+     * 
+     * @param upper true for an upper band, false for a lower band
+     * @param period the length of time to take the moving average for
+     * @param deviations the number of standard deviations to offset the band
+     */
+    volumeWeightedBollingerBand(upper = true, period = 20, deviations = 2): Price {
         const reducer = map((values: Candle[]) => {
-            let volumeWeightedPrice = 0;
-            let totalVolume = 0;
+            const sma = this._vwma(values);
+            const stddev = _stddev(sma, values.map((val) => (val.high + val.low + val.close)/3));
 
+            return _bollingerBand(upper, sma, deviations, stddev);
+        });
+
+        return new Price(this.pipe(bufferCount(period, 1), reducer));
+    }
+
+    /**
+     * Returns a custom volume weighted MACD indicator for 2 given periods.
+     * Defined as VWMA(lowerPeriod) - VWMA(upperPeriod)
+     * 
+     * @param lowerPeriod the first, smaller period for the vwma
+     * @param upperPeriod the second, larger period for the vwma 
+     */
+    volumeWeightedMacdOf(lowerPeriod = 12, upperPeriod = 26): Price {
+        return new Price(zip(this.vwma(lowerPeriod), this.vwma(upperPeriod)).pipe(map(([vwma1, vwma2]) => vwma1 - vwma2)));
+    }
+
+    /**
+     * Returns the volume weighted MACD indicator, defined as the VWMA(12) - VWMA(26)
+     */
+    volumeWeightedMacd(): Price {
+        return this.volumeWeightedMacdOf();
+    }
+
+    /**
+     * Returns a custom VWMACD indicator for 2 given periods.
+     * Defined as EMA(VWMACD(lowerPeriod, upperPeriod), signalPeriod)
+     * 
+     * @param lowerPeriod the first, smaller period for the ema
+     * @param upperPeriod the second, larger period for the ema 
+     * @param signalPeriod the period to base the signal value off of
+     */
+    volumeWeightedMacdSignalOf(lowerPeriod = 12, upperPeriod = 26, signalPeriod = 9): Price {
+        return this.volumeWeightedMacdOf(lowerPeriod, upperPeriod).ema(signalPeriod);
+    }
+
+    /**
+     * Returns the VWMACD signal, defined as EMA(VWMACD, 9)
+     */
+    volumeWeightedMacdSignal(): Price {
+        return this.volumeWeightedMacdSignalOf();
+    }
+
+    /**
+     * Returns the Money Flow Index, defined as
+     * 
+     * 100 - 100 / (1 + MFR)
+     * 
+     * Where MFR is:
+     * <period> period positive money flow / <period> period negative money flow
+     * 
+     * @param period the period to take the money flow index on
+     */
+    mfi(period = 14): Price {
+        const reducer = map((values: Candle[]) => {
+            let positiveFlow = 0;
+            let negativeFlow = 0;
+
+            const last = values.shift() as Candle;
+            let lastTypical = (last.close + last.high + last.low)/3;
             for (const val of values) {
-                const typical = (val.high + val.low + val.close)/3;
-                const vol = val.volume;
-
-                volumeWeightedPrice += typical * vol;
-                totalVolume += vol;
+                const typical = (val.close + val.high + val.low)/3;
+                const rawMoneyFlow = typical * val.volume;
+                if (typical > lastTypical) {
+                    positiveFlow += rawMoneyFlow;
+                } else {
+                    negativeFlow += rawMoneyFlow;
+                }
+                lastTypical = typical;
             }
 
-            return volumeWeightedPrice/totalVolume;
+            if (!positiveFlow) positiveFlow = 1;
+            if (!negativeFlow) negativeFlow = 1;
+
+            const mfr = positiveFlow / negativeFlow;
+            const mfi = 100 - (100 / (1 + mfr));
+            return mfi;
         });
-        return new Price(this.pipe(bufferCount(period, 1), reducer));
+
+        return new Price(this.pipe(bufferCount(period + 1, 1), reducer));
     }
 }
 
