@@ -11,8 +11,8 @@ export default function(candles: Candles):AlgorithmResult {
     const bear = new Crossover(signal, macd);
 
     return {
-        sell: bear,
-        buy: bull,
+        exit: bear,
+        entry: bull,
         state: {
             bull,
             bear,

@@ -11,8 +11,8 @@ export default function(candles: CoinbaseProCandle):AlgorithmResult {
     const deathCross = new Crossover(vwma20, vwma10);
 
     return {
-        buy: goldenCross,
-        sell: deathCross,
+        entry: goldenCross,
+        exit: deathCross,
         state: {
             goldenCross,
             deathCross,

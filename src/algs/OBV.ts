@@ -14,8 +14,8 @@ export default function(candles: Candles):AlgorithmResult {
     const bear = obv.pipe(map((val) => val < LOWER));
 
     return {
-        sell: bear,
-        buy: bull,
+        exit: bear,
+        entry: bull,
         state: {
             obv,
             bull,

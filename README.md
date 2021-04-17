@@ -25,7 +25,7 @@ The library (`src/lib`) is all of the helpers that make up the algs and runners 
  - Coinbase Candles collects historical and current data from Coinbase
  - The math on prices and candles get sent into the Decision class which outputs a stream of true/false values
  - A wallet is initialized with the Coinbase API keys
- - The transact helper takes in the buy/sell Decisions and makes transactions
+ - The transact helper takes in the entry/exit Decisions and makes transactions
 
 ## Running
 

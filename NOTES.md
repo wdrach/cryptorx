@@ -5,9 +5,6 @@ Hitlist:
    - webhook heartbeat based candle timekeeper
 
 Indicators:
-Oscillators:
- - Money Flow Index (MFI): https://www.investopedia.com/terms/m/mfi.asp
-
 Candlestick Patterns:
  * Potency reduces drasically 3-5 periods after a pattern is noticed
  - 3 line strike
@@ -31,8 +28,6 @@ Candlestick Patterns:
    - Short bar (low volume)
    - Tall upward bar
    - Predicts higher prices with a 50% accuracy
-
- ## Notes
 
  Streak indicators:
  https://help.streak.tech/indicators/

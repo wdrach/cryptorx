@@ -13,8 +13,10 @@ dotenv.config();
 
 
 export interface AlgorithmResult {
-  buy: Observable<boolean>;
-  sell: Observable<boolean>;
+  entry: Observable<boolean>;
+  exit: Observable<boolean>;
+  target?: Observable<boolean>;
+  stop?: Observable<boolean>;
   // eslint-disable-next-line
   state?: Record<string, Observable<any>>;
 }
@@ -909,6 +911,7 @@ export class CoinbaseWallet implements Wallet {
       }
   }
 
+  // eslint-disable-next-line
   async _signAndSend(endpoint: string, request?: any): Promise<any> {
       const method = request ? 'POST' : 'GET';
 
@@ -1009,13 +1012,13 @@ export class CoinbaseWallet implements Wallet {
   }
 
 
-  transact(buySignal: Observable<boolean>, sellSignal: Observable<boolean>, readySignal: Observable<boolean>): void {
-      combineLatest([buySignal, sellSignal, readySignal]).subscribe(([sell, buy, ready]) => {
+  transact(entrySignal: Observable<boolean>, exitSignal: Observable<boolean>, readySignal: Observable<boolean>): void {
+      combineLatest([entrySignal, exitSignal, readySignal]).subscribe(([entry, exit, ready]) => {
           // if we're not ready, we're still in pre-data, not live data
-          if (!ready || sell === buy) return;
+          if (!ready || exit === entry) return;
 
-          if (sell) this.sell();
-          else if (buy) this.buy();
+          if (exit) this.sell();
+          else if (entry) this.buy();
       });
   }
 }
@@ -1035,7 +1038,7 @@ export class SimulationWallet implements Wallet {
   transactionStream = new Subject<Date>();
   lastTransaction: Date = new Date(Date.now());
   lastTransactions: Date[] = [];
-  transactionFee = .005;
+  transactionFee = COINBASE_TRANSACTION_FEE;
   product = 'ETH-USD';
 
   constuctor(startingCash = 1000, fee: number = COINBASE_TRANSACTION_FEE): void {

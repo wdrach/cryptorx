@@ -6,16 +6,16 @@ import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants'
 const activeProduct = CoinbaseProduct.ETH_USD;
 
 function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
-    const buySignal = signals.buy;
-    const sellSignal = signals.sell;
+    const entrySignal = signals.entry;
+    const exitSignal = signals.exit;
 
     candles.open().pipe(first()).subscribe((val) => wallet.startingPrice = val);
 
-    candles.close().pipe(withLatestFrom(combineLatest([buySignal, sellSignal]))).subscribe(([close, [buy, sell]]) => {
+    candles.close().pipe(withLatestFrom(combineLatest([entrySignal, exitSignal]))).subscribe(([close, [entry, exit]]) => {
         wallet.endingPrice = close;
-        if (sell === buy) return;
-        if (sell) wallet.sell(close);
-        if (buy) wallet.buy(close);
+        if (exit === entry) return;
+        if (exit) wallet.sell(close);
+        if (entry) wallet.buy(close);
     });
 
     return candles;
@@ -37,20 +37,20 @@ function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, pri
     state.close = candles.close();
     state.price = priceStream;
 
-    const buySignal = signals.buy;
-    const sellSignal = signals.sell;
-    state.buy = buySignal;
-    state.sell = sellSignal;
+    const entrySignal = signals.entry;
+    const exitSignal = signals.exit;
+    state.entry = entrySignal;
+    state.exit = exitSignal;
 
     let price = 0;
     let ready = false;
 
-    combineLatest([buySignal, sellSignal]).subscribe(([sell, buy]) => {
+    combineLatest([entrySignal, exitSignal]).subscribe(([entry, exit]) => {
     // if we're not ready, we're still in pre-data, not live data
-        if (!ready || sell === buy) return;
+        if (!ready || exit === entry) return;
 
-        if (sell) wallet.sell(price);
-        else if (buy) wallet.buy(price);
+        if (exit) wallet.sell(price);
+        else if (entry) wallet.buy(price);
     });
 
     candles.ready.subscribe((val) => {
@@ -202,13 +202,13 @@ const main = async () => {
                     fees += wallet.fees;
                     trades += wallet.transactions;
 
-                    if (worstProfit === -1 || wallet.profit < worstProfit) {
+                    if (worstProfitOverReplacement === -1 || wallet.profitOverReplacement < worstProfitOverReplacement) {
                         worstExpectedProfit = wallet.expectedProfit;
                         worstProfit = wallet.profit;
                         worstProfitOverReplacement = wallet.profitOverReplacement;
                     }
 
-                    if (bestProfit === -1 || wallet.profit > bestProfit) {
+                    if (bestProfitOverReplacement === -1 || wallet.profitOverReplacement > bestProfitOverReplacement) {
                         bestExpectedProfit = wallet.expectedProfit;
                         bestProfit = wallet.profit;
                         bestProfitOverReplacement = wallet.profitOverReplacement;
@@ -259,12 +259,12 @@ const main = async () => {
 
             const unsubscriber = new Subject<void>();
 
-            combineLatest([out.buy, out.sell, candles.time(), candles.current]).pipe(takeUntil(unsubscriber)).subscribe(([buy, sell, time, ready]) => {
+            combineLatest([out.entry, out.exit, candles.time(), candles.current]).pipe(takeUntil(unsubscriber)).subscribe(([entry, exit, time, ready]) => {
                 // if we're not ready, we're still in pre-data, not live data
                 if (!ready) return;
 
                 console.log(`time: ${(new Date(time * 1000)).toLocaleString()}`);
-                console.log(`ready - sell: ${sell} buy: ${buy}`);
+                console.log(`ready - exit: ${exit} entry: ${entry}`);
                 unsubscriber.next();
                 unsubscriber.complete();
                 candles.complete();
@@ -272,14 +272,14 @@ const main = async () => {
                 // TODO - this really shouldn't be necessary, but we want to wait extra time just in the off chance
                 // we hit a coinbase limit
                 setTimeout(() => {
-                    if (sell && !buy) {
+                    if (exit && !entry) {
                         console.log('selling!');
                         wallet.sell();
-                    } else if (buy && !sell) {
+                    } else if (entry && !exit) {
                         console.log('buying!');
                         wallet.buy();
                     } else {
-                        console.log('sell === buy');
+                        console.log('exit === entry');
                     }
 
                     setTimeout(() => {

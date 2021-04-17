@@ -5,15 +5,15 @@ export default function(candles: CoinbaseProCandle): AlgorithmResult {
     const upper = typical.bollingerBand();
     const lower = typical.bollingerBand(false);
 
-    // price crosses upper, sell signal
+    // price crosses upper, exit signal
     const priceOverUpper = new Crossover(typical, upper);
 
-    // price dips below lower, buy signal
+    // price dips below lower, entry signal
     const priceBelowLower = new NegativeCrossover(typical, lower);
 
     return {
-        sell: priceOverUpper,
-        buy: priceBelowLower,
+        exit: priceOverUpper,
+        entry: priceBelowLower,
         state: {
             priceOverUpper,
             priceBelowLower,

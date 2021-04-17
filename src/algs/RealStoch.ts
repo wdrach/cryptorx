@@ -22,14 +22,14 @@ export default function(candles: Candles):AlgorithmResult {
     const bear = new Crossover(stochD, stochK);
 
     // bull && oversold
-    const buy = zip(bull, oversold).pipe(map(([b, o]) => b && o));
+    const entry = zip(bull, oversold).pipe(map(([b, o]) => b && o));
 
     // bear && overbought
-    const sell = zip(bear, overbought).pipe(map(([b, o]) => b && o));
+    const exit = zip(bear, overbought).pipe(map(([b, o]) => b && o));
 
     return {
-        sell,
-        buy,
+        entry,
+        exit,
         state: {
             stochK,
             stochD,
