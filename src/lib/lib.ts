@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { bufferCount, map, pluck, scan, skip } from 'rxjs/operators';
+import { bufferCount, first, map, pluck, scan, skip, takeUntil, withLatestFrom } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -9,14 +9,17 @@ import { promises } from 'fs';
 
 import dotenv from 'dotenv';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_API, COINBASE_EARLIEST_TIMESTAMP, COINBASE_TRANSACTION_FEE, LogLevel } from './constants';
+import { timeLog } from 'node:console';
 dotenv.config();
 
 
 export interface AlgorithmResult {
   entry: Observable<boolean>;
   exit: Observable<boolean>;
-  target?: Observable<boolean>;
-  stop?: Observable<boolean>;
+  entryTarget?: Observable<number>;
+  exitTarget?: Observable<number>;
+  entryStop?: Observable<number>;
+  exitStop?: Observable<number>;
   // eslint-disable-next-line
   state?: Record<string, Observable<any>>;
 }
@@ -731,7 +734,7 @@ export class CoinbaseProCandle extends Candles {
       const endTime = timestamp ? timestamp + (prefetch * period * 1000) : undefined;
 
       _fetchCandles(product, prefetch, period, startTime, endTime).then((candles: Array<Candle>) => {
-          console.log('received the initial batch of candles');
+          log(LogLevel.SUCCESS)('received the initial batch of candles');
           for (const candle of candles) {
               this.next(candle);
           }
@@ -875,8 +878,19 @@ interface Wallet {
 
   lastFee: number;
 
+  inMarket: boolean;
+
   buy(price?: number): void
   sell(price?: number): void
+
+  marketBuy(): void
+  marketSell(): void
+
+  limitBuy(price: number): void
+  limitSell(price: number): void
+
+  stopEntry(price: number): void
+  stopLoss(price: number): void
 }
 
 interface CoinbaseAccount {
@@ -1003,6 +1017,14 @@ export class CoinbaseWallet implements Wallet {
       });
   }
 
+  stopLoss(price: number): void {
+      console.log('WOULD BE PUTTING IN A STOP LOSS IF THAT WAS SUPPORTED!', price);
+  }
+
+  stopEntry(price: number): void {
+      console.log('WOULD BE PUTTING IN A STOP ENTRY IF THAT WAS SUPPORTED!', price);
+  }
+
   sell(price?: number): void {
       if (!this.inMarket) return;
       if (price) this.limitSell(price);
@@ -1040,10 +1062,20 @@ export class SimulationWallet implements Wallet {
   lastTransactions: Date[] = [];
   transactionFee = COINBASE_TRANSACTION_FEE;
   product = 'ETH-USD';
+  inMarket = false;
 
-  constuctor(startingCash = 1000, fee: number = COINBASE_TRANSACTION_FEE): void {
-      this.dollars = startingCash;
-      this.transactionFee = fee;
+  stopEntrySub?: Subscription;
+  stopLossSub?: Subscription;
+  limitBuySub?: Subscription;
+  limitSellSub?: Subscription;
+  marketBuySub?: Subscription;
+  marketSellSub?: Subscription;
+
+  sim!: CoinbaseProSimulation;
+
+  constuctor(): void {
+      this.dollars = 1000;
+      this.transactionFee = COINBASE_TRANSACTION_FEE;
       this.startingDollars = this.dollars;
   }
 
@@ -1069,24 +1101,113 @@ export class SimulationWallet implements Wallet {
       this.lastTransactionPrice = price;
   }
   buy(price: number): void {
+      if (this.stopEntrySub) {
+          this.stopEntrySub.unsubscribe();
+          this.stopEntrySub = undefined;
+      }
+
+      if (this.limitBuySub) {
+          this.limitBuySub.unsubscribe();
+          this.limitBuySub = undefined;
+      }
+
+      if (this.marketBuySub) {
+          this.marketBuySub.unsubscribe();
+          this.marketBuySub = undefined;
+      }
+
       if (!this.dollars) return;
 
       const fee = this.transactionFee * this.dollars;
       this.coin = (this.dollars - fee) / price;
       this.dollars = 0;
-
+      this.inMarket = true;
 
       this._transact(fee, price);
   }
 
   sell(price: number): void {
+      if (this.stopLossSub) {
+          this.stopLossSub.unsubscribe();
+          this.stopLossSub = undefined;
+      }
+
+      if (this.limitSellSub) {
+          this.limitSellSub.unsubscribe();
+          this.limitSellSub = undefined;
+      }
+
+      if (this.marketSellSub) {
+          this.marketSellSub.unsubscribe();
+          this.marketSellSub = undefined;
+      }
+
       if (!this.coin) return;
 
       const fee = this.transactionFee*price*this.coin;
       this.dollars = (this.coin * price) - fee;
       this.coin = 0;
+      this.inMarket = false;
 
       this._transact(fee, price);
+  }
+
+  marketBuy(): void {
+      // market buy already in progress
+      if (this.marketBuySub) return;
+
+      this.marketBuySub = this.sim.close().subscribe((close: number) => {
+          this.buy(close);
+      });
+  }
+
+  marketSell(): void {
+      // market sell already in progress
+      if (this.marketSellSub) return;
+
+      this.marketSellSub = this.sim.close().subscribe((close: number) => {
+          this.sell(close);
+      });
+  }
+
+  stopEntry(price: number): void {
+      if (this.stopEntrySub) this.stopEntrySub.unsubscribe();
+
+      this.stopEntrySub = this.sim.high().subscribe((high: number) => {
+          if (high > price) {
+              this.buy(price);
+          }
+      });
+  }
+
+  stopLoss(price: number): void {
+      if (this.stopLossSub) this.stopLossSub.unsubscribe();
+
+      this.stopLossSub = this.sim.low().subscribe((low: number) => {
+          if (low < price) {
+              this.sell(price);
+          }
+      });
+  }
+
+  limitBuy(price: number): void {
+      if (this.limitBuySub) this.limitBuySub.unsubscribe();
+
+      this.limitBuySub = this.sim.low().subscribe((low: number) => {
+          if (low < price) {
+              this.buy(price);
+          }
+      });
+  }
+
+  limitSell(price: number): void {
+      if (this.limitSellSub) this.limitSellSub.unsubscribe();
+
+      this.limitSellSub = this.sim.high().subscribe((high: number) => {
+          if (high > price) {
+              this.sell(price);
+          }
+      });
   }
 
   get expected(): number {
@@ -1109,4 +1230,67 @@ export class SimulationWallet implements Wallet {
   get profitOverReplacement(): number {
       return this.profit - this.expectedProfit;
   }
+}
+
+export class Broker {
+    unsubscriber: Subject<void>;
+
+    constructor(wallet: Wallet, algorithmResult: AlgorithmResult) {
+        this.unsubscriber = new Subject<void>();
+
+        if (algorithmResult.entry && algorithmResult.exit) {
+            combineLatest([algorithmResult.entry, algorithmResult.exit])
+                .pipe(takeUntil(this.unsubscriber)).subscribe(([entry, exit]) => {
+                    if (entry !== exit) {
+                        if (entry) {
+                            wallet.marketBuy();
+                        } else if (exit) {
+                            wallet.marketSell();
+                        }
+                    }
+                    // entry === exit - noop
+                });
+        } else if (algorithmResult.entry) {
+            algorithmResult.entry.pipe(takeUntil(this.unsubscriber)).subscribe((val: boolean) => {
+                if (val) {
+                    wallet.marketBuy();
+                }
+            });
+        } else if (algorithmResult.exit) {
+            algorithmResult.exit.pipe(takeUntil(this.unsubscriber)).subscribe((val: boolean) => {
+                if (val) {
+                    wallet.marketSell();
+                }
+            });
+        }
+
+        if (algorithmResult.entryTarget) {
+            algorithmResult.entryTarget.pipe(takeUntil(this.unsubscriber)).subscribe((val: number) => {
+                wallet.limitBuy(val);
+            });
+        }
+
+        if (algorithmResult.exitTarget) {
+            algorithmResult.exitTarget.pipe(takeUntil(this.unsubscriber)).subscribe((val: number) => {
+                wallet.limitSell(val);
+            });
+        }
+
+        if (algorithmResult.entryStop) {
+            algorithmResult.entryStop.pipe(takeUntil(this.unsubscriber)).subscribe((val: number) => {
+                wallet.stopEntry(val);
+            });
+        }
+
+        if (algorithmResult.exitStop) {
+            algorithmResult.exitStop.pipe(takeUntil(this.unsubscriber)).subscribe((val: number) => {
+                wallet.stopLoss(val);
+            });
+        }
+    }
+
+    complete(): void {
+        this.unsubscriber.next();
+        this.unsubscriber.complete();
+    }
 }

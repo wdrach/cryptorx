@@ -1,40 +1,75 @@
-Hitlist:
- - Weight decisions
- - Tests for indicators
- - Stability improvements
-   - webhook heartbeat based candle timekeeper
-
 Indicators:
-Candlestick Patterns:
- * Potency reduces drasically 3-5 periods after a pattern is noticed
- - 3 line strike
-   - Used on a downtrend, reversal signal
-   - 3 downward candles followed by a single upward candle that closes above the first candle's high
-   - Predicts higher prices with 83% accuracy
- - 3 black crows
-   - Used on an uptrend, reversal signal
-   - Starts at or near the high of an uptrend
-   - 3 bars in a row that reach new lows and close below the previous bar's low
-   - Predicts lower prices with a 78% accuracy
- - Evening star
-   - Used on an uptrend, reversal signal
-   - Tall upward bar
-   - Short bar (low volume)
-   - Tall downward bar
-   - Predicts lower prices with a 72% accuracy
- - Abandoned baby
-   - The opposite of an Evening Star, downtrend reversal signal
-   - Tall downward bar
-   - Short bar (low volume)
-   - Tall upward bar
-   - Predicts higher prices with a 50% accuracy
+### Overlap Studies
 
- Streak indicators:
- https://help.streak.tech/indicators/
+DEMA (Double Exponential Moving Average)
+TEMA (Triple Exponential Moving Average)
+WMA (Weighted Moving Average)
+TMA (Triangular Moving Average)
+Hull Moving Average
+Kaufman Moving Average
+UBB (Upper Bollinger Band)
+MBB (Middle Bollinger Band)
+LBB (Lower Bollinger Band)
+Parabolic SAR
+Supertrend
+Alligator
+RSI Moving Average
+Ichimoku Cloud
+ATR Trailing Stop Loss
 
- Major Indicators
- Oscillators:
-  - CCI (20), ADI (14), Awesome Osc., Momentum (10)
+### Momentum Indicators
 
-Algs:
-https://streak.world/discover
+Aroon Up
+Aroon Down
+Aroon Oscillator
+CCI (Commodity Channel Index)
+Plus DI (+DI, Plus Directional Index)
+Minus DI (-DI, Minus Directional Index)
+WillR (Williams %R)
+TRIX (1 day ROC of a triple smooth EMA)
+PROC (Price Rate Of Change)
+MOM (Momentum Indicator)
+Stochastic Momentum Index
+Stochastic RSI
+Trend Intensity Index
+ADX (Average Directional Index)
+
+### Volume Indicators
+
+Prev N Volume
+Opening Range Volume
+Moving Average Volume
+
+### Volatility Indicators
+
+NATR (Normalized True Range)
+ATR Bands Top
+ATR Bands Bottom
+Vortex Indicator
+Choppiness Index
+Choppiness Moving Average
+ATR (Average True Range)
+TR (True Range)
+
+### Price Action
+
+Trade At Price
+Pivot Points
+Opening Range
+Volume Weighted Average Price
+Narrow Range
+
+### Chart Patterns
+
+Three White Soldiers
+Morning Doji Star
+Abandoned Baby
+Tri Star
+Advance Block
+Conceal Baby Swallow
+Stick Sandwich
+Morning Star
+Kicking
+Spinning Top
+Engulfing
+Homing Pigeon

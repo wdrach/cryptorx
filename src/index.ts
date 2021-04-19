@@ -1,25 +1,9 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
-import { first, map, takeUntil, withLatestFrom } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult } from './lib/lib';
+import { map, takeUntil } from 'rxjs/operators';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, Broker } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 const activeProduct = CoinbaseProduct.ETH_USD;
-
-function transact(wallet: SimulationWallet, signals: AlgorithmResult, candles: CoinbaseProCandle) {
-    const entrySignal = signals.entry;
-    const exitSignal = signals.exit;
-
-    candles.open().pipe(first()).subscribe((val) => wallet.startingPrice = val);
-
-    candles.close().pipe(withLatestFrom(combineLatest([entrySignal, exitSignal]))).subscribe(([close, [entry, exit]]) => {
-        wallet.endingPrice = close;
-        if (exit === entry) return;
-        if (exit) wallet.sell(close);
-        if (entry) wallet.buy(close);
-    });
-
-    return candles;
-}
 
 // eslint-disable-next-line
 const state: Record<string, Observable<any>> = {};
@@ -169,11 +153,15 @@ const main = async () => {
             const sims = [];
             const wallets: SimulationWallet[] = [];
             for (let i = 0; i < RUN_SIMS; i++) {
-                const wallet = new SimulationWallet();
-                wallets.push(wallet);
                 const sim = new CoinbaseProSimulation(t, duration, activeProduct);
+                const wallet = new SimulationWallet();
+                wallet.sim = sim;
+                wallets.push(wallet);
 
-                sims.push(transact(wallet, activeAlg(sim), sim));
+                const broker = new Broker(wallet, activeAlg(sim));
+                sim.subscribe({complete: () => broker.complete()});
+
+                sims.push(sim);
             }
 
             forkJoin(sims).subscribe(() => {
@@ -253,7 +241,7 @@ const main = async () => {
             const wallet = new CoinbaseWallet();
             await wallet.init();
 
-            const candles = new CoinbaseProCandle(activeProduct, 20, t);
+            const candles = new CoinbaseProCandle(activeProduct, 250, t);
 
             const out = activeAlg(candles);
 
