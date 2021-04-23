@@ -1,6 +1,6 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map, takeUntil } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, Broker } from './lib/lib';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, Broker, CoinbaseProMultisim } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 const activeProduct = CoinbaseProduct.ETH_USD;
@@ -23,6 +23,7 @@ function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, pri
 
     const entrySignal = signals.entry;
     const exitSignal = signals.exit;
+    if (!entrySignal || !exitSignal) return;
     state.entry = entrySignal;
     state.exit = exitSignal;
 
@@ -129,6 +130,7 @@ const main = async () => {
         const cron  = process.argv.findIndex((val) => val === '-c') !== -1;
         const sellTest  = process.argv.findIndex((val) => val === '--sell-test') !== -1;
         const buyTest  = process.argv.findIndex((val) => val === '--buy-test') !== -1;
+        const scratch = process.argv.findIndex((val) => val === '-z') !== -1;
 
         const timeIndex = process.argv.findIndex((val) => val === '-t');
         let t: CoinbaseGranularity | undefined;
@@ -245,6 +247,8 @@ const main = async () => {
 
             const out = activeAlg(candles);
 
+            if (!out.entry || !out.exit) return;
+
             const unsubscriber = new Subject<void>();
 
             combineLatest([out.entry, out.exit, candles.time(), candles.current]).pipe(takeUntil(unsubscriber)).subscribe(([entry, exit, time, ready]) => {
@@ -283,6 +287,26 @@ const main = async () => {
             } else {
                 wallet.buy();
             }
+        } else if (scratch) {
+            console.log('starting a test multisim');
+
+            // eslint-disable-next-line
+            const activeAlg = require('./algs/MultiCurrency').default;
+            const usdProducts: CoinbaseProduct[] = [];
+            for (const product in CoinbaseProduct) {
+                const splitProduct = product.split('_');
+                if (splitProduct[1] === 'USD') {
+                    usdProducts.push(splitProduct.join('-') as CoinbaseProduct);
+                }
+            }
+
+            const period = 40*24;
+
+            const multisim = new CoinbaseProMultisim(activeAlg, usdProducts, CoinbaseGranularity.HOUR, period);
+
+            multisim.subscribe((val) => console.log(val));
+
+            multisim.init();
         } else {
             console.log('unsupported');
         }

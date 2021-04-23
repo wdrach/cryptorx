@@ -1,4 +1,4 @@
-import { AlgorithmResult, Candles, Crossover } from '../lib/lib';
+import { AlgorithmResult, Candles, Crossover, safeStop } from '../lib/lib';
 
 export default function(candles: Candles):AlgorithmResult {
     const macd = candles.volumeWeightedMacd();
@@ -13,6 +13,7 @@ export default function(candles: Candles):AlgorithmResult {
     return {
         exit: bear,
         entry: bull,
+        exitStop: safeStop(bull, candles),
         state: {
             bull,
             bear,

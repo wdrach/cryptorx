@@ -1,6 +1,6 @@
 
 import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
-import { bufferCount, first, map, pluck, scan, skip, takeUntil, withLatestFrom } from 'rxjs/operators';
+import { bufferCount, filter, map, pluck, scan, takeUntil, withLatestFrom } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -9,17 +9,33 @@ import { promises } from 'fs';
 
 import dotenv from 'dotenv';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_API, COINBASE_EARLIEST_TIMESTAMP, COINBASE_TRANSACTION_FEE, LogLevel } from './constants';
-import { timeLog } from 'node:console';
 dotenv.config();
 
 
 export interface AlgorithmResult {
-  entry: Observable<boolean>;
-  exit: Observable<boolean>;
+  entry?: Observable<boolean>;
+  exit?: Observable<boolean>;
   entryTarget?: Observable<number>;
   exitTarget?: Observable<number>;
   entryStop?: Observable<number>;
   exitStop?: Observable<number>;
+  rank?: Observable<number>;
+
+  // eslint-disable-next-line
+  state?: Record<string, Observable<any>>;
+}
+
+export interface IntermediateAlgorithmResult {
+  entry?: boolean;
+  exit?: boolean;
+
+  entryTarget?: number;
+  exitTarget?:  number;
+  entryStop?:   number;
+  exitStop?:    number;
+
+  rank?: number;
+
   // eslint-disable-next-line
   state?: Record<string, Observable<any>>;
 }
@@ -371,7 +387,7 @@ export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, 
     const endDate = new Date(current);
     const endStr = endDate.toISOString();
 
-    log(LogLevel.INFO)(`fetching candles for ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`);
+    log(LogLevel.INFO)(`fetching candles for ${product} ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`);
 
     // bump cur by 1 more candle before updating so we don't overlap that minute
     current += period*1000;
@@ -430,8 +446,8 @@ export class Candles extends Subject<Candle> {
         return new Price(this.pipe(map((c: Candle) => (c.high + c.low + c.close)/3)));
     }
 
-    volume(): Observable<number> {
-        return this.pipe(pluck('volume'));
+    volume(): Price {
+        return new Price(this.pipe(pluck('volume')));
     }
 
     /**
@@ -791,6 +807,78 @@ export class CoinbaseProCandle extends Candles {
   }
 }
 
+export class CoinbaseProMultisim extends Subject<Record<string, IntermediateAlgorithmResult>> {
+    _timestamp: number;
+    _alg: (candle: CoinbaseProCandle) => AlgorithmResult;
+    _products: CoinbaseProduct[];
+    _time: number;
+    _period: number;
+
+    constructor(alg: (candle: CoinbaseProCandle) => AlgorithmResult, products: CoinbaseProduct[], period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300) {
+        super();
+
+        let last = Date.now() - (time * period * 1000);
+        if (last < COINBASE_EARLIEST_TIMESTAMP) {
+            last = COINBASE_EARLIEST_TIMESTAMP;
+        }
+
+        this._timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
+
+        this._alg = alg;
+        this._products = products;
+        this._time = time;
+        this._period = period;
+    }
+
+    async init(): Promise<void> {
+        const theBigDb: Record<string, Record<string, IntermediateAlgorithmResult>> = {};
+        for (const product of this._products) {
+            await new Promise<void>((res) => {
+                const sim = new CoinbaseProCandle(product, this._time, this._period, this._timestamp);
+                const algResult = this._alg(sim);
+
+                // rank, entrytarget, exittarget, entry, exit, entrystop, exitstop
+                const observables: Record<string, Observable<number | boolean>> = {};
+
+                if (algResult.rank) observables.rank = algResult.rank;
+                if (algResult.entry) observables.entry = algResult.entry;
+                if (algResult.entryTarget) observables.entryTarget = algResult.entryTarget;
+                if (algResult.entryStop) observables.entryStop = algResult.entryStop;
+                if (algResult.exit) observables.exit = algResult.exit;
+                if (algResult.exitStop) observables.exitStop = algResult.exitStop;
+                if (algResult.exitTarget) observables.exitTarget = algResult.exitTarget;
+
+                sim.time().pipe(withLatestFrom(...(Object.values(observables) as Observable<number|boolean>[]))).subscribe((res) => {
+                    const results = res as (number|boolean)[];
+                    const result: Record<string, number | boolean> = {};
+                    const keys = Object.keys(observables);
+
+                    keys.forEach((val, i) => {
+                        const resultVal = results[i + 1] as number|boolean;
+                        result[val] = resultVal;
+                    });
+
+                    const intermediateAlgResult = result as IntermediateAlgorithmResult;
+
+                    const time = results[0] as number;
+
+                    if (!theBigDb[time]) theBigDb[time] = {};
+
+                    theBigDb[time][product] = intermediateAlgResult;
+                });
+
+                sim.subscribe({complete: () => res()});
+            });
+        }
+
+        const timestamps = Object.keys(theBigDb).sort((a, b) => parseInt(a) - parseInt(b));
+
+        for (const timestamp of timestamps) {
+            super.next(theBigDb[timestamp]);
+        }
+    }
+}
+
 export class CoinbaseProSimulation extends CoinbaseProCandle {
     constructor(period: CoinbaseGranularity = CoinbaseGranularity.MINUTE, time = 300, product: CoinbaseProduct = CoinbaseProduct.ETH_USD) {
         let last = Date.now() - (time * period * 1000);
@@ -810,9 +898,16 @@ export class Decision<T> extends Subject<boolean> {
   constructor(a: Observable<T>, b: Observable<T>, operator: (valA: T, valB: T) => boolean) {
       super();
 
-      this._subscription = combineLatest([a, b]).pipe(map(([mapValA, mapValB]) => operator(mapValA, mapValB))).subscribe((decision: boolean) => {
-          this.next(decision);
-      });
+      this._subscription = combineLatest([a, b])
+          .pipe(
+              map(([mapValA, mapValB]) => operator(mapValA, mapValB)),
+              bufferCount(2, 1),
+              filter(([prev, curr]) => prev !== curr),
+              map((arrVal) => arrVal[1])
+          )
+          .subscribe((decision: boolean) => {
+              this.next(decision);
+          });
   }
 
   complete(): void {
@@ -1293,4 +1388,26 @@ export class Broker {
         this.unsubscriber.next();
         this.unsubscriber.complete();
     }
+}
+
+export function safeStop(entry: Observable<boolean>, candles: Candles): Observable<number> {
+    return entry.pipe(withLatestFrom(candles), bufferCount(2, 1), map(([prev, curr]) => {
+        const [prevVal, prevCandle] = prev;
+        const [currVal] = curr;
+        if (!prevVal && currVal) {
+            return prevCandle.low;
+        }
+
+        return 0;
+    }), filter((val) => !!val));
+}
+
+export function maxStop(entry: Observable<boolean>, candles: Candles, stop = 30): Observable<number> {
+    return entry.pipe(withLatestFrom(candles), map(([val, candle]) => {
+        if (val) {
+            return candle.open * (100 - stop) / 100;
+        }
+
+        return 0;
+    }), filter((val) => !!val));
 }
