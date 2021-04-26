@@ -14,8 +14,8 @@ export default function(candles: Candles):AlgorithmResult {
     const oversold = mfi.pipe(map((val) => val < LOWER));
 
     return {
-        sell: overbought,
-        buy: oversold,
+        exit: overbought,
+        entry: oversold,
         state: {
             mfi,
             overbought,

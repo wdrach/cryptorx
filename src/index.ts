@@ -1,6 +1,6 @@
 import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
 import { map, takeUntil } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, Broker, CoinbaseProMultisim } from './lib/lib';
+import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, Broker, CoinbaseProMultisim, SimulationMultiWallet, MultiBroker, ComparisonBroker } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 const activeProduct = CoinbaseProduct.ETH_USD;
@@ -124,10 +124,12 @@ const main = async () => {
         let activeAlg: (candles: CoinbaseProCandle) => AlgorithmResult = require(alg).default;
 
         const simIndex = process.argv.findIndex((val) => val === '-s');
-        const sim   = simIndex !== -1;
-        const paper = process.argv.findIndex((val) => val === '-p') !== -1;
-        const live  = process.argv.findIndex((val) => val === '-l') !== -1;
-        const cron  = process.argv.findIndex((val) => val === '-c') !== -1;
+        const sim    = simIndex !== -1;
+        const paper  = process.argv.findIndex((val) => val === '-p') !== -1;
+        const live   = process.argv.findIndex((val) => val === '-l') !== -1;
+        const cron   = process.argv.findIndex((val) => val === '-c') !== -1;
+        const multi  = process.argv.findIndex((val) => val === '-m') !== -1;
+        const huge   = process.argv.findIndex((val) => val === '-h') !== -1;
         const sellTest  = process.argv.findIndex((val) => val === '--sell-test') !== -1;
         const buyTest  = process.argv.findIndex((val) => val === '--buy-test') !== -1;
         const scratch = process.argv.findIndex((val) => val === '-z') !== -1;
@@ -150,73 +152,126 @@ const main = async () => {
         const duration = 365 * 24 * 60 * 60 / t;
 
         if (sim) {
-            const RUN_SIMS = 10;
+            const RUN_SIMS = huge ? 100 : (multi ? 1 : 10);
 
-            const sims = [];
-            const wallets: SimulationWallet[] = [];
+            let cash = 0;
+            let expected = 0;
+            let expectedProfit = 0;
+            let profitOverReplacement = 0;
+            let fees = 0;
+            let trades = 0;
+            let profit = 0;
+
+            let worstProfit = -1;
+            let bestProfit = -1;
+            let worstExpectedProfit = -1;
+            let bestExpectedProfit = -1;
+            let worstProfitOverReplacement = -1;
+            let bestProfitOverReplacement = -1;
+
+            let bearProfit = 0;
+            let bearExpectedProfit = 0;
+            let bearProfitOverReplacement = 0;
+            let bearCount = 0;
+            let bullProfit = 0;
+            let bullExpectedProfit = 0;
+            let bullProfitOverReplacement = 0;
+            let bullCount = 0;
+
+            let comparisonProfit = 0;
+
             for (let i = 0; i < RUN_SIMS; i++) {
-                const sim = new CoinbaseProSimulation(t, duration, activeProduct);
-                const wallet = new SimulationWallet();
-                wallet.sim = sim;
-                wallets.push(wallet);
+                const wallet = new SimulationMultiWallet();
+                let comparisonWallet: SimulationMultiWallet | undefined;
+                let products = [CoinbaseProduct.ETH_USD];
+                if (multi) {
+                    comparisonWallet = new SimulationMultiWallet();
+                    products = [];
 
-                const broker = new Broker(wallet, activeAlg(sim));
-                sim.subscribe({complete: () => broker.complete()});
-
-                sims.push(sim);
-            }
-
-            forkJoin(sims).subscribe(() => {
-                let cash = 0;
-                let expected = 0;
-                let expectedProfit = 0;
-                let profitOverReplacement = 0;
-                let fees = 0;
-                let trades = 0;
-                let profit = 0;
-
-                let worstProfit = -1;
-                let bestProfit = -1;
-                let worstExpectedProfit = -1;
-                let bestExpectedProfit = -1;
-                let worstProfitOverReplacement = -1;
-                let bestProfitOverReplacement = -1;
-
-
-                for (const wallet of wallets) {
-                    cash += wallet.netWorth;
-                    expected += wallet.expected;
-                    expectedProfit += wallet.expectedProfit;
-                    profit += wallet.profit;
-                    profitOverReplacement += wallet.profitOverReplacement;
-                    fees += wallet.fees;
-                    trades += wallet.transactions;
-
-                    if (worstProfitOverReplacement === -1 || wallet.profitOverReplacement < worstProfitOverReplacement) {
-                        worstExpectedProfit = wallet.expectedProfit;
-                        worstProfit = wallet.profit;
-                        worstProfitOverReplacement = wallet.profitOverReplacement;
-                    }
-
-                    if (bestProfitOverReplacement === -1 || wallet.profitOverReplacement > bestProfitOverReplacement) {
-                        bestExpectedProfit = wallet.expectedProfit;
-                        bestProfit = wallet.profit;
-                        bestProfitOverReplacement = wallet.profitOverReplacement;
+                    for (const product in CoinbaseProduct) {
+                        const splitProduct = product.split('_');
+                        if (splitProduct[1] === 'USD') {
+                            products.push(splitProduct.join('-') as CoinbaseProduct);
+                        }
                     }
                 }
 
-                expectedProfit = expectedProfit / RUN_SIMS;
-                profit = profit / RUN_SIMS;
-                profitOverReplacement = profitOverReplacement / RUN_SIMS;
+                const sim = new CoinbaseProMultisim(activeAlg, products, t, duration);
+                wallet.sim = sim;
+                if (comparisonWallet) comparisonWallet.sim = sim;
 
-                console.log(`\nGot ${(cash / RUN_SIMS).toFixed(2)} in the bank`);
-                console.log(`would have ${(expected / RUN_SIMS).toFixed(2)} in the bank if I just held`);
-                console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
-                console.log(`you made ${(trades / RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)} per sim`);
-                console.log('--------------------------------------------------------------');
-                console.log(`The best sim made ${bestProfit.toFixed(2)} over ${bestExpectedProfit.toFixed(2)} for a POR of ${bestProfitOverReplacement.toFixed(2)}`);
-                console.log(`The worst sim made ${worstProfit.toFixed(2)} over ${worstExpectedProfit.toFixed(2)} for a POR of ${worstProfitOverReplacement.toFixed(2)}`);
-            });
+                const broker = new MultiBroker(wallet, sim);
+                let comparisonBroker: ComparisonBroker | undefined;
+                if (comparisonWallet) comparisonBroker = new ComparisonBroker(comparisonWallet, sim);
+                await sim.init();
+                broker.complete();
+                comparisonBroker?.complete();
+
+
+                cash += wallet.netWorth;
+                expected += wallet.expected;
+                expectedProfit += wallet.expectedProfit;
+                profit += wallet.profit;
+                profitOverReplacement += wallet.profitOverReplacement;
+                fees += wallet.fees;
+                trades += wallet.transactions;
+
+                if (worstProfitOverReplacement === -1 || wallet.profitOverReplacement < worstProfitOverReplacement) {
+                    worstExpectedProfit = wallet.expectedProfit;
+                    worstProfit = wallet.profit;
+                    worstProfitOverReplacement = wallet.profitOverReplacement;
+                }
+
+                if (bestProfitOverReplacement === -1 || wallet.profitOverReplacement > bestProfitOverReplacement) {
+                    bestExpectedProfit = wallet.expectedProfit;
+                    bestProfit = wallet.profit;
+                    bestProfitOverReplacement = wallet.profitOverReplacement;
+                }
+
+                if (wallet.expectedProfit < 0) {
+                    bearProfit += wallet.profit;
+                    bearExpectedProfit += wallet.expectedProfit;
+                    bearProfitOverReplacement += wallet.profitOverReplacement;
+                    bearCount++;
+                } else {
+                    bullProfit += wallet.profit;
+                    bullExpectedProfit += wallet.expectedProfit;
+                    bullProfitOverReplacement += wallet.profitOverReplacement;
+                    bullCount++;
+                }
+
+                if (comparisonWallet) {
+                    comparisonProfit += comparisonWallet.profit;
+                }
+            }
+
+            expectedProfit = expectedProfit / RUN_SIMS;
+            profit = profit / RUN_SIMS;
+            profitOverReplacement = profitOverReplacement / RUN_SIMS;
+
+            let comparisonProfitOverReplacement = 0;
+            if (comparisonProfit) {
+                comparisonProfit = comparisonProfit / RUN_SIMS;
+                comparisonProfitOverReplacement = profit - comparisonProfit;
+            }
+
+            console.log(`\nGot ${(cash / RUN_SIMS).toFixed(2)} in the bank`);
+            console.log(`would have ${(expected / RUN_SIMS).toFixed(2)} in the bank if I just held`);
+            console.log(`that's a ${profit.toFixed(2)}% profit when I expected ${expectedProfit.toFixed(2)}% or a ${profitOverReplacement.toFixed(2)}% profit over replacement.`);
+            console.log(`you made ${(trades / RUN_SIMS).toFixed(2)} trades per sim, for an average fee of ${(fees/trades).toFixed(2)} and a total of ${(fees/RUN_SIMS).toFixed(2)} per sim`);
+            console.log('--------------------------------------------------------------');
+            console.log(`The best sim made ${bestProfit.toFixed(2)}% over ${bestExpectedProfit.toFixed(2)} for a POR of ${bestProfitOverReplacement.toFixed(2)}%`);
+            console.log(`The worst sim made ${worstProfit.toFixed(2)}% over ${worstExpectedProfit.toFixed(2)} for a POR of ${worstProfitOverReplacement.toFixed(2)}%`);
+            console.log('--------------------------------------------------------------');
+            console.log(`In bear markets, you made ${(bearProfit/bearCount).toFixed(2)}% over ${(bearExpectedProfit/bearCount).toFixed(2)}% for a POR of ${(bearProfitOverReplacement/bearCount).toFixed(2)}%`);
+            console.log(`In bull markets, you made ${(bullProfit/bullCount).toFixed(2)}% over ${(bullExpectedProfit/bullCount).toFixed(2)}% for a POR of ${(bullProfitOverReplacement/bullCount).toFixed(2)}%`);
+            console.log('--------------------------------------------------------------');
+            
+            if (comparisonProfit) {
+                console.log(`Compared to trading the same alg with just ETH-USD (which made ${comparisonProfit.toFixed(2)}%), you had a POR of ${comparisonProfitOverReplacement.toFixed(2)}%`);
+            }
+            console.log('--------------------------------------------------------------');
+            console.log(`${expectedProfit}	${profit}	${profitOverReplacement}	${bearExpectedProfit/bearCount}	${bearProfit/bearCount}	${bearProfitOverReplacement/bearCount}	${bullExpectedProfit/bullCount}	${bullProfit/bullCount}	${bullProfitOverReplacement/bullCount}	${trades / RUN_SIMS}	${fees / RUN_SIMS}	${comparisonProfit}	${comparisonProfitOverReplacement}`);
         } else if (paper) {
             const filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;
             if (filenameIndex && filenameIndex < process.argv.length) {
@@ -288,25 +343,7 @@ const main = async () => {
                 wallet.buy();
             }
         } else if (scratch) {
-            console.log('starting a test multisim');
-
-            // eslint-disable-next-line
-            const activeAlg = require('./algs/MultiCurrency').default;
-            const usdProducts: CoinbaseProduct[] = [];
-            for (const product in CoinbaseProduct) {
-                const splitProduct = product.split('_');
-                if (splitProduct[1] === 'USD') {
-                    usdProducts.push(splitProduct.join('-') as CoinbaseProduct);
-                }
-            }
-
-            const period = 40*24;
-
-            const multisim = new CoinbaseProMultisim(activeAlg, usdProducts, CoinbaseGranularity.HOUR, period);
-
-            multisim.subscribe((val) => console.log(val));
-
-            multisim.init();
+            console.log('nothing in the scratchpad right now');
         } else {
             console.log('unsupported');
         }

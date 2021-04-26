@@ -1,5 +1,5 @@
 
-import { Observable, Subject, Subscription, combineLatest, zip } from 'rxjs';
+import { Observable, Subject, Subscription, combineLatest, zip, Subscriber } from 'rxjs';
 import { bufferCount, filter, map, pluck, scan, takeUntil, withLatestFrom } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
@@ -38,6 +38,10 @@ export interface IntermediateAlgorithmResult {
 
   // eslint-disable-next-line
   state?: Record<string, Observable<any>>;
+}
+
+export interface ExtendedAlgorithmResult extends IntermediateAlgorithmResult {
+    close?: number;
 }
 
 /** A convenience class for working with candle data */
@@ -807,7 +811,7 @@ export class CoinbaseProCandle extends Candles {
   }
 }
 
-export class CoinbaseProMultisim extends Subject<Record<string, IntermediateAlgorithmResult>> {
+export class CoinbaseProMultisim extends Subject<Record<string, ExtendedAlgorithmResult>> {
     _timestamp: number;
     _alg: (candle: CoinbaseProCandle) => AlgorithmResult;
     _products: CoinbaseProduct[];
@@ -831,7 +835,7 @@ export class CoinbaseProMultisim extends Subject<Record<string, IntermediateAlgo
     }
 
     async init(): Promise<void> {
-        const theBigDb: Record<string, Record<string, IntermediateAlgorithmResult>> = {};
+        const theBigDb: Record<string, Record<string, ExtendedAlgorithmResult>> = {};
         for (const product of this._products) {
             await new Promise<void>((res) => {
                 const sim = new CoinbaseProCandle(product, this._time, this._period, this._timestamp);
@@ -848,17 +852,19 @@ export class CoinbaseProMultisim extends Subject<Record<string, IntermediateAlgo
                 if (algResult.exitStop) observables.exitStop = algResult.exitStop;
                 if (algResult.exitTarget) observables.exitTarget = algResult.exitTarget;
 
-                sim.time().pipe(withLatestFrom(...(Object.values(observables) as Observable<number|boolean>[]))).subscribe((res) => {
+                sim.time().pipe(withLatestFrom(sim.close(), ...(Object.values(observables) as Observable<number|boolean>[]))).subscribe((res) => {
                     const results = res as (number|boolean)[];
                     const result: Record<string, number | boolean> = {};
                     const keys = Object.keys(observables);
 
                     keys.forEach((val, i) => {
-                        const resultVal = results[i + 1] as number|boolean;
+                        const resultVal = results[i + 2] as number|boolean;
                         result[val] = resultVal;
                     });
 
-                    const intermediateAlgResult = result as IntermediateAlgorithmResult;
+                    result.close = results[1] as number;
+
+                    const intermediateAlgResult = result as ExtendedAlgorithmResult;
 
                     const time = results[0] as number;
 
@@ -985,6 +991,28 @@ interface Wallet {
   limitSell(price: number): void
 
   stopEntry(price: number): void
+  stopLoss(price: number): void
+}
+
+interface MultiWallet {
+  dollars: number;
+  coins: Record<string, number>;
+  currentCoin: string;
+  transactions: number;
+  fees: number;
+  startingPrice: number;
+  endingPrice: number;
+
+  buy(product: CoinbaseProduct, price?: number): void
+  sell(price?: number): void
+
+  marketBuy(product: CoinbaseProduct): void
+  marketSell(): void
+
+  limitBuy(product: CoinbaseProduct, price: number): void
+  limitSell(price: number): void
+
+  stopEntry(product: CoinbaseProduct, price: number): void
   stopLoss(price: number): void
 }
 
@@ -1327,6 +1355,113 @@ export class SimulationWallet implements Wallet {
   }
 }
 
+export class SimulationMultiWallet implements MultiWallet {
+    dollars = 1000;
+    transactionFee = COINBASE_TRANSACTION_FEE;
+    startingDollars = 1000;
+    coins: Record<string, number> = {};
+    currentCoin = '';
+    sim!: CoinbaseProMultisim;
+    startingPrice = 0;
+    endingPrice = 0;
+    lastDollars = 0;
+    transactions = 0;
+    fees = 0;
+
+    marketSellSub?: Subscription;
+    marketBuySub?: Subscription;
+
+    buy(product: CoinbaseProduct, price: number): void {
+        if (this.marketBuySub) {
+            this.marketBuySub.unsubscribe();
+            this.marketBuySub = undefined;
+        }
+
+        this.currentCoin = product;
+
+        const fee = this.transactionFee * this.dollars;
+        this.coins[product] = (this.dollars - fee) / price;
+        this.lastDollars = this.dollars;
+        this.dollars = 0;
+
+        this.fees += fee;
+        this.transactions++;
+    }
+
+    sell(price: number): void {
+        if (this.marketSellSub) {
+            this.marketSellSub.unsubscribe();
+            this.marketSellSub = undefined;
+        }
+
+        this.dollars = this.coins[this.currentCoin] * price;
+        const fee = this.transactionFee*price*this.coins[this.currentCoin];
+        this.dollars = (this.coins[this.currentCoin] * price) - fee;
+        this.coins[this.currentCoin] = 0;
+
+        this.currentCoin = '';
+
+        this.fees += fee;
+        this.transactions++;
+    }
+
+    marketBuy(product: CoinbaseProduct): void {
+        if (this.marketBuySub) return;
+
+        this.marketBuySub = this.sim.subscribe((result) => {
+            this.buy(product, result[product].close || 0);
+        });
+    }
+
+    marketSell(): void {
+        // market sell already in progress
+        if (this.marketSellSub) return;
+
+        this.marketSellSub = this.sim.subscribe((result) => {
+            if (this.currentCoin) {
+                this.sell(result[this.currentCoin].close || 0);
+            }
+        });
+    }
+
+    limitBuy(product: CoinbaseProduct, price: number): void {
+        console.log('LIMIT BUY NOT IMPLEMENTED', product, price);
+    }
+
+    limitSell(price: number): void {
+        console.log('LIMIT SELL NOT IMPLEMENTED', price);
+    }
+
+    stopEntry(product: CoinbaseProduct, price: number): void {
+        console.log('STOP ENTRY NOT IMPLEMENTED', product, price);
+    }
+
+    stopLoss(price: number): void {
+        console.log('STOP LOSS NOT IMPLEMENTED', price);
+    }
+
+    get expected(): number {
+        const entryFee = this.startingDollars * this.transactionFee;
+        const entryCoin = (this.startingDollars - entryFee) / this.startingPrice;
+        return (this.endingPrice * entryCoin) * (1 - this.transactionFee);
+    }
+    get netWorth(): number {
+        return this.dollars || this.lastDollars;
+    }
+
+    get profit(): number {
+        return 100 * (this.netWorth - this.startingDollars)/this.startingDollars;
+    }
+
+    get expectedProfit(): number {
+        return 100 * (this.expected - this.startingDollars)/this.startingDollars;
+    }
+
+    get profitOverReplacement(): number {
+        return this.profit - this.expectedProfit;
+    }
+}
+
 export class Broker {
     unsubscriber: Subject<void>;
 
@@ -1382,6 +1517,57 @@ export class Broker {
                 wallet.stopLoss(val);
             });
         }
+    }
+
+    complete(): void {
+        this.unsubscriber.next();
+        this.unsubscriber.complete();
+    }
+}
+
+export class MultiBroker {
+    unsubscriber = new Subject<void>();
+    constructor(wallet: MultiWallet, sim: CoinbaseProMultisim) {
+        sim.pipe(takeUntil(this.unsubscriber)).subscribe((val) => {
+            if (val['ETH-USD']) {
+                if (!wallet.startingPrice) wallet.startingPrice = val['ETH-USD'].close || wallet.startingPrice;
+                wallet.endingPrice = val['ETH-USD'].close || wallet.endingPrice;
+            }
+            if (wallet.dollars) {
+                // out of market
+                const options = Object.keys(val).filter((key) => val[key].entry).sort((a, b) => (val[b].rank || 0) - (val[a].rank || 0));
+
+                if (options.length) {
+                    wallet.buy(options[0] as CoinbaseProduct, val[options[0]].close);
+                }
+            } else {
+                // in market
+                if (val[wallet.currentCoin] && val[wallet.currentCoin].exit) {
+                    wallet.sell(val[wallet.currentCoin].close);
+                }
+            }
+        });
+    }
+
+    complete(): void {
+        this.unsubscriber.next();
+        this.unsubscriber.complete();
+    }
+}
+
+export class ComparisonBroker {
+    unsubscriber = new Subject<void>();
+    constructor(wallet: MultiWallet, sim: CoinbaseProMultisim) {
+        sim.pipe(takeUntil(this.unsubscriber)).subscribe((val) => {
+            if (!val['ETH-USD']) return;
+            if (!wallet.startingPrice) wallet.startingPrice = val['ETH-USD'].close || wallet.startingPrice;
+            wallet.endingPrice = val['ETH-USD'].close || wallet.endingPrice;
+            if (wallet.dollars && val['ETH-USD'].entry) {
+                wallet.buy(CoinbaseProduct.ETH_USD, wallet.endingPrice);
+            } else if (!wallet.dollars && val['ETH-USD'].exit) {
+                wallet.sell(wallet.endingPrice);
+            }
+        });
     }
 
     complete(): void {
