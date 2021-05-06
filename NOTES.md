@@ -73,3 +73,51 @@ Kicking
 Spinning Top
 Engulfing
 Homing Pigeon
+
+
+
+
+
+Corrolated indicators:
+
+Oscillators
+ * Long Upper Shadow (UNCONFIRMED)
+ * Marubozu White
+ * Awesome (mediocre, but there)
+ * MACD positive but near zero
+ * RSI near 70
+ * Stoch near 90
+ * Chande Momentum Oscillator
+ * Fisher right at 2
+ * RVI near 85 (NOT CONFIRMED)
+ * Stoch RSI near 100
+ * Ultimate Oscillator peak (NOT CONFIRMED)
+ * Williams %R peak
+
+
+ CONFIRMED ONCE:
+  * Awesome Oscillator just bounced off 0
+  * MACD positive but near zero
+  * RSI near 70
+  * Chande near 0 trending up
+  * Williams %R peak
+  
+  * Stoch near 90
+  * Fisher right at 2
+  * Stoch RSI near 100
+
+  * Marubozu White
+
+
+CONFIRMED TWICE:
+  * RSI near 70
+  * Williams %R peak
+  * Stoch near 90
+  * Fisher right at 2
+  * Stoch RSI near 10
+
+CONFIRMED THRICE:
+  * RSI near 70
+  * Williams %R peak
+  * Stoch near 90 (BEST)
+  * Fisher right at 2

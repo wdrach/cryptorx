@@ -49,16 +49,14 @@ You can now run the scripts in this repo in "live mode."
 #### Modes
 By default, the script will fetch some data and provide a debug log to make sure you're able to access Coinbase data correctly.
 
-* -l runs a live trade mode
+* -s runs a year long simulation with 10 simulations
+  * Adding -h runs the same simulation 100 times
+  * Adding -m runs a multi-currency simulation, with a benchmark of the same alg on ETH-USD
+* -c runs a cronjob, which is a singular algorithm run to trade on live data right now, and then exit. If you don't specify an alg, it will choose the best known alg for the time period. 
   * You need to have either a .env set with environment variables for
     * COINBASE_API_KEY - your api key
     * COINBASE_SECRET - your api secret (provided to you by Coinbase when creating a key)
     * COINBASE_PASSPHRASE - your api passphrase (provided by you to Coinbase when creating a key)
-* -s runs a year long simulation with 10 simulations
-  * Adding -h runs the same simulation 100 times
-  * Adding -m runs a multi-currency simulation, with a benchmark of the same alg on ETH-USD
-* -p runs a papertrade (a simulation, but with current data instead of historical data)
-* -c runs a cronjob, which is a singular algorithm run to trade on live data right now, and then exit. If you don't specify an alg, it will choose the best known alg for the time period. 
 
 #### Options
 -t specifies the time period for the algorithm to run against.

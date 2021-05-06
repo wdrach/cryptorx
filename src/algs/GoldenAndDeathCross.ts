@@ -1,6 +1,6 @@
-import { AlgorithmResult, CoinbaseProCandle, Crossover } from '../lib/lib';
+import { AlgorithmResult, CoinbaseProCandles, Crossover } from '../lib/lib';
 
-export default function(candles: CoinbaseProCandle):AlgorithmResult {
+export default function(candles: CoinbaseProCandles):AlgorithmResult {
     const sma15 = candles.close().sma(15);
     const sma50 = candles.close().sma(50);
 

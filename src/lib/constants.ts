@@ -52,7 +52,7 @@ export enum CoinbaseProduct {
   SUSHI_GBP = 'SUSHI-GBP', ALGO_USD = 'ALGO-USD',   ZEC_USDC = 'ZEC-USDC',
   XTZ_EUR = 'XTZ-EUR',     REN_USD = 'REN-USD',     ETH_DAI = 'ETH-DAI',
   UMA_BTC = 'UMA-BTC',     NU_BTC = 'NU-BTC',       BCH_EUR = 'BCH-EUR',
-  STORJ_BTC = 'STORJ-BTC', ANKR_BTC = 'ANKR-BTC', 
+  STORJ_BTC = 'STORJ-BTC', ANKR_BTC = 'ANKR-BTC',   FORTH_USD = 'FORTH-USD'
 }
 
 export enum CoinbaseGranularity {

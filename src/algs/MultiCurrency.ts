@@ -1,9 +1,9 @@
 import { map, withLatestFrom } from 'rxjs/operators';
-import { AlgorithmResult, CoinbaseProCandle, Crossover } from '../lib/lib';
+import { AlgorithmResult, CoinbaseProCandles, Crossover } from '../lib/lib';
 
-export default function(candles: CoinbaseProCandle):AlgorithmResult {
-    const vwma10 = candles.vwma(10);
-    const vwma20 = candles.vwma(20);
+export default function(candles: CoinbaseProCandles):AlgorithmResult {
+    const vwma10 = candles.vwma(10*24);
+    const vwma20 = candles.vwma(20*24);
 
     // golden cross
     const goldenCross = new Crossover(vwma10, vwma20);
@@ -12,13 +12,11 @@ export default function(candles: CoinbaseProCandle):AlgorithmResult {
     const deathCross = new Crossover(vwma20, vwma10);
 
     const vol = candles.volume();
-    const sma = vol.sma(30);
-    const daySma = vol;
-    const rsi = candles.rsi();
+    const sma = vol.sma(30*24);
+    const daySma = vol.sma(24);
+    const vwmacd = candles.volumeWeightedMacd();
 
-    const rank = sma.pipe(withLatestFrom(daySma, rsi), map(([smaVol, recentVol, rsi]) => {
-        return (rsi - 50) * (recentVol / smaVol);
-    }));
+    const rank = sma.pipe(withLatestFrom(daySma, vwmacd), map(([smaVol, recentVol, macd]) => (1/macd) * (recentVol / smaVol)));
 
     return {
         entry: goldenCross,

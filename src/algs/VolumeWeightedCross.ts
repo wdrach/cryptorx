@@ -1,6 +1,6 @@
-import { AlgorithmResult, CoinbaseProCandle, Crossover } from '../lib/lib';
+import { AlgorithmResult, CoinbaseProCandles, Crossover } from '../lib/lib';
 
-export default function(candles: CoinbaseProCandle):AlgorithmResult {
+export default function(candles: CoinbaseProCandles):AlgorithmResult {
     const vwma10 = candles.vwma(10);
     const vwma20 = candles.vwma(20);
 

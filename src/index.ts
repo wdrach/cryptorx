@@ -1,109 +1,9 @@
-import { forkJoin, Observable, combineLatest, Subject } from 'rxjs';
-import { map, takeUntil } from 'rxjs/operators';
-import { CoinbaseProCandle, CoinbaseProSimulation, CoinbaseProPrice, log, writeState, SimulationWallet, CoinbaseWallet, AlgorithmResult, Broker, CoinbaseProMultisim, SimulationMultiWallet, MultiBroker, ComparisonBroker } from './lib/lib';
+import { combineLatest, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+import { CoinbaseProCandles, CoinbaseProPrice, log, CoinbaseWallet, AlgorithmResult, CoinbaseProSimulation, SimulationWallet, Broker, ComparisonBroker, ExtendedAlgorithmResult } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 const activeProduct = CoinbaseProduct.ETH_USD;
-
-// eslint-disable-next-line
-const state: Record<string, Observable<any>> = {};
-
-function paperTransact(signals: AlgorithmResult, candles: CoinbaseProCandle, priceStream: CoinbaseProPrice, filename?: string) {
-    const wallet = new SimulationWallet();
-    state.coin = wallet.coinStream;
-    state.dollars = wallet.dollarStream;
-    state.transaction = wallet.transactionStream.pipe(map((val) => val.toLocaleString()));
-
-    state.time = candles.time();
-    state.high = candles.high();
-    state.low = candles.low();
-    state.open = candles.open();
-    state.close = candles.close();
-    state.price = priceStream;
-
-    const entrySignal = signals.entry;
-    const exitSignal = signals.exit;
-    if (!entrySignal || !exitSignal) return;
-    state.entry = entrySignal;
-    state.exit = exitSignal;
-
-    let price = 0;
-    let ready = false;
-
-    combineLatest([entrySignal, exitSignal]).subscribe(([entry, exit]) => {
-    // if we're not ready, we're still in pre-data, not live data
-        if (!ready || exit === entry) return;
-
-        if (exit) wallet.sell(price);
-        else if (entry) wallet.buy(price);
-    });
-
-    candles.ready.subscribe((val) => {
-        ready = val;
-    });
-    priceStream.subscribe((val) => {
-        price = val;
-    });
-
-    combineLatest([candles.time()]).subscribe(([t]) => {
-        console.clear();
-        console.log(`Time: ${(new Date(t * 1000)).toLocaleString()}`);
-        console.log(`Current Price: ${price}`);
-        console.log(`${wallet.coin}ETH`);
-        console.log(`$${wallet.dollars}`);
-
-        if (wallet.transactions > 0) {
-            console.log('--------------------------------------------------------------------');
-            if (wallet.dollars) {
-                console.log(`Sold at ${wallet.lastTransaction.toLocaleString()}`);
-                console.log('--------------------------------------------------------------------');
-                console.log(`Sold ${wallet.coin.toFixed(4)}ETH at $${wallet.lastTransactionPrice.toFixed(2)}`);
-                console.log(`Fees were $${wallet.lastFee.toFixed(2)} for a net of $${wallet.dollars.toFixed(2)}`);
-                console.log('--------------------------------------------------------------------');
-                console.log(`Right now you have a profit of ${wallet.profit.toFixed(2)}%.`);
-                console.log(`If you would have held, you'd have a profit of ${wallet.expectedProfit.toFixed(2)}%.`);
-                console.log(`That's a profit over replacement of ${wallet.profitOverReplacement.toFixed(2)}%`);
-            } else if (wallet.coin) {
-                console.log(`Bought at ${wallet.lastTransaction.toLocaleString()}`);
-                console.log('--------------------------------------------------------------------');
-                console.log(`Bought ${wallet.coin.toFixed(4)}ETH at $${wallet.lastTransactionPrice.toFixed(2)}`);
-                console.log(`Fees were ${wallet.lastFee.toFixed(2)} for a net cost of $${wallet.dollars.toFixed(2)}`);
-                console.log('--------------------------------------------------------------------');
-                console.log(`Right now you have a profit of ${wallet.profit.toFixed(2)}%.`);
-                console.log(`If you would have held, you'd have a profit of ${wallet.expectedProfit.toFixed(2)}%.`);
-                console.log(`That's a profit over replacement of ${wallet.profitOverReplacement.toFixed(2)}%`);
-            }
-
-            console.log('--------------------------------------------------------------------');
-            console.log(`In total, $${wallet.fees} in fees has been paid on ${wallet.transactions} transactions`);
-            console.log('--------------------------------------------------------------------');
-            console.log('Transactions:');
-
-            for (const transaction of wallet.lastTransactions) {
-                console.log(transaction.toLocaleString());
-            }
-        }
-    });
-
-    if (filename) {
-        writeState(state, candles.time(), `${filename}.csv`);
-        writeState({transactions: state.transactions}, state.transactions, `${filename}.transactions.csv`);
-    }
-
-    return candles;
-}
-
-const paperTrade = (activeAlg: (candle: CoinbaseProCandle) => AlgorithmResult, activePeriod: CoinbaseGranularity, filename?: string) => {
-    const candles = new CoinbaseProCandle(activeProduct, 100, activePeriod);
-    const price = new CoinbaseProPrice();
-    paperTransact(activeAlg(candles), candles, price, filename);
-};
-
-const liveTrade = async () => {
-    const wallet = new CoinbaseWallet();
-    await wallet.init();
-};
-
 
 const main = async () => {
     if (process.argv.length <= 2) {
@@ -121,12 +21,11 @@ const main = async () => {
 
         const alg = `./algs/${algName}`;
         // eslint-disable-next-line
-        let activeAlg: (candles: CoinbaseProCandle) => AlgorithmResult = require(alg).default;
+        let activeAlg: (candles: CoinbaseProCandles) => AlgorithmResult = require(alg).default;
+        console.log(alg);
 
         const simIndex = process.argv.findIndex((val) => val === '-s');
         const sim    = simIndex !== -1;
-        const paper  = process.argv.findIndex((val) => val === '-p') !== -1;
-        const live   = process.argv.findIndex((val) => val === '-l') !== -1;
         const cron   = process.argv.findIndex((val) => val === '-c') !== -1;
         const multi  = process.argv.findIndex((val) => val === '-m') !== -1;
         const huge   = process.argv.findIndex((val) => val === '-h') !== -1;
@@ -152,7 +51,7 @@ const main = async () => {
         const duration = 365 * 24 * 60 * 60 / t;
 
         if (sim) {
-            const RUN_SIMS = huge ? 100 : (multi ? 1 : 10);
+            const RUN_SIMS = huge ? (multi ? 10 : 100) : (multi ? 1 : 10);
 
             let cash = 0;
             let expected = 0;
@@ -181,11 +80,11 @@ const main = async () => {
             let comparisonProfit = 0;
 
             for (let i = 0; i < RUN_SIMS; i++) {
-                const wallet = new SimulationMultiWallet();
-                let comparisonWallet: SimulationMultiWallet | undefined;
+                const wallet = new SimulationWallet();
+                let comparisonWallet: SimulationWallet | undefined;
                 let products = [CoinbaseProduct.ETH_USD];
                 if (multi) {
-                    comparisonWallet = new SimulationMultiWallet();
+                    comparisonWallet = new SimulationWallet();
                     products = [];
 
                     for (const product in CoinbaseProduct) {
@@ -196,11 +95,11 @@ const main = async () => {
                     }
                 }
 
-                const sim = new CoinbaseProMultisim(activeAlg, products, t, duration);
+                const sim = new CoinbaseProSimulation(activeAlg, products, t, duration);
                 wallet.sim = sim;
                 if (comparisonWallet) comparisonWallet.sim = sim;
 
-                const broker = new MultiBroker(wallet, sim);
+                const broker = new Broker(wallet, sim);
                 let comparisonBroker: ComparisonBroker | undefined;
                 if (comparisonWallet) comparisonBroker = new ComparisonBroker(comparisonWallet, sim);
                 await sim.init();
@@ -272,16 +171,6 @@ const main = async () => {
             }
             console.log('--------------------------------------------------------------');
             console.log(`${expectedProfit}	${profit}	${profitOverReplacement}	${bearExpectedProfit/bearCount}	${bearProfit/bearCount}	${bearProfitOverReplacement/bearCount}	${bullExpectedProfit/bullCount}	${bullProfit/bullCount}	${bullProfitOverReplacement/bullCount}	${trades / RUN_SIMS}	${fees / RUN_SIMS}	${comparisonProfit}	${comparisonProfitOverReplacement}`);
-        } else if (paper) {
-            const filenameIndex = process.argv.findIndex((val) => val === '-f') + 1;
-            if (filenameIndex && filenameIndex < process.argv.length) {
-                paperTrade(activeAlg, t, process.argv[filenameIndex]);
-            } else {
-                paperTrade(activeAlg, t);
-            }
-        } else if (live) {
-            console.log('Live trading is discouraged over cron trading, which is more stable and accurate over many days.');
-            liveTrade();
         } else if (cron) {
             if (defaultAlg) {
                 switch (t) {
@@ -298,7 +187,7 @@ const main = async () => {
             const wallet = new CoinbaseWallet();
             await wallet.init();
 
-            const candles = new CoinbaseProCandle(activeProduct, 250, t);
+            const candles = new CoinbaseProCandles(activeProduct, 250, t);
 
             const out = activeAlg(candles);
 
@@ -324,7 +213,7 @@ const main = async () => {
                         wallet.sell();
                     } else if (entry && !exit) {
                         console.log('buying!');
-                        wallet.buy();
+                        wallet.buy(CoinbaseProduct.ETH_USD);
                     } else {
                         console.log('exit === entry');
                     }
@@ -340,10 +229,32 @@ const main = async () => {
             if (sellTest) {
                 wallet.sell();
             } else {
-                wallet.buy();
+                wallet.buy(CoinbaseProduct.ETH_USD);
             }
         } else if (scratch) {
-            console.log('nothing in the scratchpad right now');
+            // eslint-disable-next-line
+            const products = [CoinbaseProduct.ETH_USD];
+
+            for (const product in CoinbaseProduct) {
+                const splitProduct = product.split('_');
+                if (splitProduct[1] === 'USD') {
+                    products.push(splitProduct.join('-') as CoinbaseProduct);
+                }
+            }
+
+
+            const sim = new CoinbaseProSimulation(activeAlg, products, t, 250 * 24 * 60 * 60 / t, true);
+
+            let currentVal: any;
+            sim.subscribe((val) => currentVal = val);
+
+            await sim.init();
+
+            const keys = Object.keys(currentVal).sort((a, b) => currentVal[b].rank - currentVal[a].rank);
+
+            for (const key of keys) {
+                console.log(`${key}   |  ${currentVal[key].rank}`);
+            }
         } else {
             console.log('unsupported');
         }
