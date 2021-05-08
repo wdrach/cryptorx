@@ -1,6 +1,6 @@
 import { combineLatest, Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { CoinbaseProCandles, CoinbaseProPrice, log, CoinbaseWallet, AlgorithmResult, CoinbaseProSimulation, SimulationWallet, Broker, ComparisonBroker, ExtendedAlgorithmResult } from './lib/lib';
+import { CoinbaseProCandles, CoinbaseProPrice, log, CoinbaseWallet, AlgorithmResult, CoinbaseProSimulation, SimulationWallet, Broker, ComparisonBroker, ExtendedAlgorithmResult, Candles } from './lib/lib';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 const activeProduct = CoinbaseProduct.ETH_USD;
@@ -21,7 +21,7 @@ const main = async () => {
 
         const alg = `./algs/${algName}`;
         // eslint-disable-next-line
-        let activeAlg: (candles: CoinbaseProCandles) => AlgorithmResult = require(alg).default;
+        let activeAlg: (candles: Candles) => AlgorithmResult = require(alg).default;
         console.log(alg);
 
         const simIndex = process.argv.findIndex((val) => val === '-s');
@@ -95,14 +95,15 @@ const main = async () => {
                     }
                 }
 
-                const sim = new CoinbaseProSimulation(activeAlg, products, t, duration);
+                const sim = new CoinbaseProSimulation(products, t, duration);
                 wallet.sim = sim;
                 if (comparisonWallet) comparisonWallet.sim = sim;
 
-                const broker = new Broker(wallet, sim);
+                const broker = new Broker(wallet, sim, activeAlg);
                 let comparisonBroker: ComparisonBroker | undefined;
-                if (comparisonWallet) comparisonBroker = new ComparisonBroker(comparisonWallet, sim);
-                await sim.init();
+                if (comparisonWallet) comparisonBroker = new ComparisonBroker(comparisonWallet, sim, activeAlg);
+                await broker.init();
+                if (comparisonBroker) await comparisonBroker.init();
                 broker.complete();
                 comparisonBroker?.complete();
 
@@ -243,7 +244,7 @@ const main = async () => {
             }
 
 
-            const sim = new CoinbaseProSimulation(activeAlg, products, t, 250 * 24 * 60 * 60 / t, true);
+            const sim = new CoinbaseProSimulation(products, t, 250 * 24 * 60 * 60 / t, true);
 
             let currentVal: any;
             sim.subscribe((val) => currentVal = val);

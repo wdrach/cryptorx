@@ -1,7 +1,7 @@
 import { map, withLatestFrom } from 'rxjs/operators';
-import { AlgorithmResult, CoinbaseProCandles } from '../lib/lib';
+import { AlgorithmResult, Candles } from '../lib/lib';
 
-export default function(candles: CoinbaseProCandles):AlgorithmResult {
+export default function(candles: Candles):AlgorithmResult {
     const vol = candles.volume();
     const sma = vol.sma(30);
     const daySma = vol.sma(10);

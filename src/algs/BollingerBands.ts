@@ -1,6 +1,6 @@
-import { AlgorithmResult, CoinbaseProCandles, Crossover, NegativeCrossover } from '../lib/lib';
+import { AlgorithmResult, Candles, Crossover, NegativeCrossover } from '../lib/lib';
 
-export default function(candles: CoinbaseProCandles): AlgorithmResult {
+export default function(candles: Candles): AlgorithmResult {
     const typical = candles.typical();
     const upper = typical.bollingerBand();
     const lower = typical.bollingerBand(false);

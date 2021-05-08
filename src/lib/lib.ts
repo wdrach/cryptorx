@@ -625,6 +625,7 @@ export class Candles extends Subject<Candle> {
         let totalVolume = 0;
 
         for (const val of values) {
+            if (!val) continue;
             const typical = (val.high + val.low + val.close)/3;
             const vol = val.volume;
 
@@ -834,14 +835,13 @@ export class CoinbaseProCandles extends Candles {
   }
 }
 
-export class CoinbaseProSimulation extends Subject<Record<string, ExtendedAlgorithmResult>> {
+export class CoinbaseProSimulation extends Subject<Record<string, Candle>> {
     _timestamp: number;
-    _alg: (candle: CoinbaseProCandles) => AlgorithmResult;
-    _products: CoinbaseProduct[];
+    products: CoinbaseProduct[];
     _time: number;
     _period: number;
 
-    constructor(alg: (candle: CoinbaseProCandles) => AlgorithmResult, products: CoinbaseProduct[], period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300, current = false) {
+    constructor(products: CoinbaseProduct[], period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300, current = false) {
         super();
 
         let last = Date.now() - (time * period * 1000);
@@ -855,54 +855,21 @@ export class CoinbaseProSimulation extends Subject<Record<string, ExtendedAlgori
             this._timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
         }
 
-        this._alg = alg;
-        this._products = products;
+        this.products = products;
         this._time = time;
         this._period = period;
     }
 
     async init(): Promise<void> {
-        const theBigDb: Record<string, Record<string, ExtendedAlgorithmResult>> = {};
-        for (const product of this._products) {
+        const theBigDb: Record<string, Record<string, Candle>> = {};
+        for (const product of this.products) {
             await new Promise<void>((res) => {
                 const sim = new CoinbaseProCandles(product, this._time, this._period, this._timestamp);
-                const algResult = this._alg(sim);
-
-                // rank, entrytarget, exittarget, entry, exit, entrystop, exitstop
-                const observables: Record<string, Observable<number | boolean>> = {};
-
-                if (algResult.rank) observables.rank = algResult.rank;
-                if (algResult.entry) observables.entry = algResult.entry;
-                if (algResult.entryTarget) observables.entryTarget = algResult.entryTarget;
-                if (algResult.entryStop) observables.entryStop = algResult.entryStop;
-                if (algResult.exit) observables.exit = algResult.exit;
-                if (algResult.exitStop) observables.exitStop = algResult.exitStop;
-                if (algResult.exitTarget) observables.exitTarget = algResult.exitTarget;
-
-                sim.time().pipe(withLatestFrom(sim.close(), ...(Object.values(observables) as Observable<number|boolean>[]))).subscribe((untypedResult) => {
-                    const results = untypedResult as (number|boolean)[];
-                    const result: Record<string, number | boolean> = {};
-                    const keys = Object.keys(observables);
-
-                    keys.forEach((val, i) => {
-                        const resultVal = results[i + 2] as number|boolean;
-                        result[val] = resultVal;
-                    });
-
-                    result.close = results[1] as number;
-
-                    const intermediateAlgResult = result as ExtendedAlgorithmResult;
-
-                    const time = results[0] as number;
-
-                    if (!theBigDb[time]) theBigDb[time] = {};
-
-                    theBigDb[time][product] = intermediateAlgResult;
+                sim.subscribe((candle) => {
+                    if (!theBigDb[candle.time]) theBigDb[candle.time] = {};
+                    theBigDb[candle.time][product] = candle;
                 });
-
-                sim.subscribe({complete: () => {
-                    res();
-                }});
+                sim.subscribe({complete: () => res()});
             });
         }
 
@@ -1256,26 +1223,85 @@ export class SimulationWallet implements Wallet {
 
 export class Broker {
     unsubscriber = new Subject<void>();
-    constructor(wallet: Wallet, sim: CoinbaseProSimulation) {
-        sim.pipe(takeUntil(this.unsubscriber)).subscribe((val) => {
-            if (val['ETH-USD']) {
-                if (!wallet.startingPrice) wallet.startingPrice = val['ETH-USD'].close || wallet.startingPrice;
-                wallet.endingPrice = val['ETH-USD'].close || wallet.endingPrice;
+    _sim: CoinbaseProSimulation;
+    _alg: (candle: Candles) => AlgorithmResult;
+    _wallet: Wallet;
+    constructor(wallet: Wallet, sim: CoinbaseProSimulation, alg: (candle: Candles) => AlgorithmResult) {
+        this._sim = sim;
+        this._alg = alg;
+        this._wallet = wallet;
+    }
+
+    async init(): Promise<void> {
+        const theBigDb: Record<string, Record<string, ExtendedAlgorithmResult>> = {};
+
+        for (const product of this._sim.products) {
+            const candles = new Candles();
+            this._sim.pipe(takeUntil(this.unsubscriber), pluck(product), filter((val) => !!val)).subscribe((c) => candles.next(c));
+            const algResult = this._alg(candles);
+
+            if (product === 'ETH-USD') {
+                candles.pipe(takeUntil(this.unsubscriber)).subscribe((candle) => {
+                    if (!this._wallet.startingPrice) this._wallet.startingPrice = candle.open;
+                    this._wallet.endingPrice = candle.close;
+                });
             }
-            if (wallet.dollars) {
+
+            // rank, entrytarget, exittarget, entry, exit, entrystop, exitstop
+            const observables: Record<string, Observable<number | boolean>> = {};
+
+            if (algResult.rank) observables.rank = algResult.rank;
+            if (algResult.entry) observables.entry = algResult.entry;
+            if (algResult.entryTarget) observables.entryTarget = algResult.entryTarget;
+            if (algResult.entryStop) observables.entryStop = algResult.entryStop;
+            if (algResult.exit) observables.exit = algResult.exit;
+            if (algResult.exitStop) observables.exitStop = algResult.exitStop;
+            if (algResult.exitTarget) observables.exitTarget = algResult.exitTarget;
+
+            candles.time().pipe(withLatestFrom(candles.close(), ...(Object.values(observables) as Observable<number|boolean>[]))).subscribe((untypedResult) => {
+                const results = untypedResult as (number|boolean)[];
+                const result: Record<string, number | boolean> = {};
+                const keys = Object.keys(observables);
+
+                keys.forEach((val, i) => {
+                    const resultVal = results[i + 2] as number|boolean;
+                    result[val] = resultVal;
+                });
+
+                result.close = results[1] as number;
+
+                const intermediateAlgResult = result as ExtendedAlgorithmResult;
+
+                const time = results[0] as number;
+
+                if (!theBigDb[time]) theBigDb[time] = {};
+
+                theBigDb[time][product] = intermediateAlgResult;
+            });
+        }
+
+        await this._sim.init();
+
+        const timestamps = Object.keys(theBigDb).sort((a, b) => parseInt(a) - parseInt(b));
+
+        for (const timestamp of timestamps) {
+            const val = theBigDb[timestamp];
+
+            if (this._wallet.dollars) {
                 // out of market
                 const options = Object.keys(val).filter((key) => val[key].entry).sort((a, b) => (val[b].rank || 0) - (val[a].rank || 0));
 
+                // TODO - stop/limit orders
                 if (options.length && !val[options[0]].exit) {
-                    wallet.buy(options[0] as CoinbaseProduct, val[options[0]].close);
+                    this._wallet.buy(options[0] as CoinbaseProduct, val[options[0]].close);
                 }
             } else {
                 // in market
-                if (val[wallet.currentCoin] && val[wallet.currentCoin].exit) {
-                    wallet.sell(val[wallet.currentCoin].close);
+                if (val[this._wallet.currentCoin] && val[this._wallet.currentCoin].exit) {
+                    this._wallet.sell(val[this._wallet.currentCoin].close);
                 }
             }
-        });
+        }
     }
 
     complete(): void {
@@ -1286,17 +1312,54 @@ export class Broker {
 
 export class ComparisonBroker {
     unsubscriber = new Subject<void>();
-    constructor(wallet: Wallet, sim: CoinbaseProSimulation) {
-        sim.pipe(takeUntil(this.unsubscriber)).subscribe((val) => {
-            if (!val['ETH-USD']) return;
-            if (!wallet.startingPrice) wallet.startingPrice = val['ETH-USD'].close || wallet.startingPrice;
-            wallet.endingPrice = val['ETH-USD'].close || wallet.endingPrice;
-            if (wallet.dollars && val['ETH-USD'].entry) {
-                wallet.buy(CoinbaseProduct.ETH_USD, wallet.endingPrice);
-            } else if (!wallet.dollars && val['ETH-USD'].exit) {
-                wallet.sell(wallet.endingPrice);
+    _sim: CoinbaseProSimulation;
+    _alg: (candle: Candles) => AlgorithmResult;
+    _wallet: Wallet;
+    constructor(wallet: Wallet, sim: CoinbaseProSimulation, alg: (candle: Candles) => AlgorithmResult) {
+        this._sim = sim;
+        this._alg = alg;
+        this._wallet = wallet;
+    }
+
+    async init(): Promise<void> {
+        const candles = new Candles();
+        this._sim.pipe(takeUntil(this.unsubscriber), pluck('ETH-USD'), filter((val) => !!val)).subscribe((c) => candles.next(c));
+        const algResult = this._alg(candles);
+        // rank, entrytarget, exittarget, entry, exit, entrystop, exitstop
+        const observables: Record<string, Observable<number | boolean>> = {};
+
+        if (algResult.rank) observables.rank = algResult.rank;
+        if (algResult.entry) observables.entry = algResult.entry;
+        if (algResult.entryTarget) observables.entryTarget = algResult.entryTarget;
+        if (algResult.entryStop) observables.entryStop = algResult.entryStop;
+        if (algResult.exit) observables.exit = algResult.exit;
+        if (algResult.exitStop) observables.exitStop = algResult.exitStop;
+        if (algResult.exitTarget) observables.exitTarget = algResult.exitTarget;
+
+        candles.time().pipe(withLatestFrom(candles.close(), ...(Object.values(observables) as Observable<number|boolean>[]))).subscribe((untypedResult) => {
+            const results = untypedResult as (number|boolean)[];
+            const result: Record<string, number | boolean> = {};
+            const keys = Object.keys(observables);
+
+            keys.forEach((val, i) => {
+                const resultVal = results[i + 2] as number|boolean;
+                result[val] = resultVal;
+            });
+
+            result.close = results[1] as number;
+
+            if (!this._wallet.startingPrice) this._wallet.startingPrice = result.close;
+            this._wallet.endingPrice = result.close;
+
+            if (this._wallet.dollars && result.entry) {
+                // TODO - stop and limit orders
+                this._wallet.buy(CoinbaseProduct.ETH_USD, result.close);
+            } else if (!this._wallet.dollars && result.exit) {
+                this._wallet.sell(result.close);
             }
         });
+
+        await this._sim.init();
     }
 
     complete(): void {
