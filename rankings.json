@@ -1,0 +1,182 @@
+{
+  "Ranker": {
+    "all": 1045.2241515115031,
+    "bull": 955.6251949082603,
+    "bear": 1327.6864512057186,
+    "allCount": 55,
+    "bullCount": 35,
+    "bearCount": 21,
+    "por": -593.6268181269785
+  },
+  "RSI": {
+    "all": 1097.1442144481468,
+    "bull": 1185.8210036092448,
+    "bear": 946.739964400517,
+    "allCount": 53,
+    "bullCount": 32,
+    "bearCount": 22,
+    "por": -246.0012910424839
+  },
+  "GoldenAndDeathCross": {
+    "all": 1102.8051955393069,
+    "bull": 1194.3228202173887,
+    "bear": 1045.4336841464908,
+    "allCount": 63,
+    "bullCount": 40,
+    "bearCount": 24,
+    "por": -138.61030678779974
+  },
+  "OBV": {
+    "all": 1103.5583683608263,
+    "bull": 1063.3009880560646,
+    "bear": 1178.930082115047,
+    "allCount": 59,
+    "bullCount": 31,
+    "bearCount": 29,
+    "por": -126.252737033455
+  },
+  "MFI": {
+    "all": 1164.2558910710798,
+    "bull": 1281.0538386501594,
+    "bear": 1040.068217859355,
+    "allCount": 53,
+    "bullCount": 29,
+    "bearCount": 25,
+    "por": -20.23441263237142
+  },
+  "FastMultiCurrency": {
+    "all": 754.670087548402,
+    "bull": 675.1044118477736,
+    "bear": 954.127303100864,
+    "allCount": 59,
+    "bullCount": 34,
+    "bearCount": 26,
+    "por": -402.7697541302198
+  },
+  "VolumeWeightedBollingerBands": {
+    "all": 969.9314514107376,
+    "bull": 1071.0393440839973,
+    "bear": 763.7191334914933,
+    "allCount": 62,
+    "bullCount": 41,
+    "bearCount": 22,
+    "por": -315.7789285051128
+  },
+  "VolumeWeightedCross": {
+    "all": 1046.0089140770533,
+    "bull": 1032.6137000126134,
+    "bear": 1104.8677213881952,
+    "allCount": 41,
+    "bullCount": 19,
+    "bearCount": 23,
+    "por": -114.99060479214297
+  },
+  "TrendGuesser": {
+    "all": 1174.4891532421063,
+    "bull": 1269.3865479966428,
+    "bear": 1099.0498488996666,
+    "allCount": 57,
+    "bullCount": 28,
+    "bearCount": 30,
+    "por": -106.86523408156775
+  },
+  "MACD": {
+    "all": 1031.0113295095177,
+    "bull": 969.9763369292089,
+    "bear": 1154.6544688189133,
+    "allCount": 63,
+    "bullCount": 29,
+    "bearCount": 35,
+    "por": -75.14330628819381
+  },
+  "TrendFollower": {
+    "all": 750.3996434829329,
+    "bull": 714.1655672661689,
+    "bear": 861.1106814468167,
+    "allCount": 68,
+    "bullCount": 34,
+    "bearCount": 35,
+    "por": -1225.6748077390894
+  },
+  "SlowVWCross": {
+    "all": 1218.304730199769,
+    "bull": 1199.9178996095643,
+    "bear": 1315.7818848183078,
+    "allCount": 66,
+    "bullCount": 41,
+    "bearCount": 26,
+    "por": -14.581403898680344
+  },
+  "MultiCurrency": {
+    "all": 688.3000829314044,
+    "bull": 692.5840132144682,
+    "bear": 808.3855675620264,
+    "allCount": 56,
+    "bullCount": 35,
+    "bearCount": 22,
+    "por": -538.6323539811456
+  },
+  "VWMACD": {
+    "all": 748.4607140376905,
+    "bull": 778.9650907317732,
+    "bear": 734.8022677799935,
+    "allCount": 43,
+    "bullCount": 30,
+    "bearCount": 14,
+    "por": -652.5620443013827
+  },
+  "VWCrossover": {
+    "all": 1008.3929457217631,
+    "bull": 939.1280182527564,
+    "bear": 1217.886120635723,
+    "allCount": 55,
+    "bullCount": 38,
+    "bearCount": 18,
+    "por": -505.24649395587477
+  },
+  "BollingerBands": {
+    "all": 871.8469979800059,
+    "bull": 938.906672506569,
+    "bear": 778.5551688856095,
+    "allCount": 62,
+    "bullCount": 37,
+    "bearCount": 26,
+    "por": -290.64986861325326
+  },
+  "HODL": {
+    "all": 1171.485118250087,
+    "bull": 1319.2690305436124,
+    "bear": 1068.1015247017658,
+    "allCount": 47,
+    "bullCount": 24,
+    "bearCount": 24,
+    "por": 0
+  },
+  "RealStoch": {
+    "all": 832.2590192483601,
+    "bull": 933.328100859992,
+    "bear": 731.8275093847589,
+    "allCount": 57,
+    "bullCount": 32,
+    "bearCount": 26,
+    "por": -392.7504325029871
+  },
+  "FasterVWCross": {
+    "all": 1245.5689783945782,
+    "bull": 1163.6823847051455,
+    "bear": 1341.470267967097,
+    "allCount": 19,
+    "bullCount": 8,
+    "bearCount": 12,
+    "por": 25.514629779681115
+  },
+  "FastVWCrossover": {
+    "all": 765.9502328277505,
+    "bull": 767.3814580324071,
+    "bear": 906.3006709404976,
+    "allCount": 28,
+    "bullCount": 17,
+    "bearCount": 12,
+    "por": -295.31161123711433
+  }
+}

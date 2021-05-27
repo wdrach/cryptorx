@@ -1,6 +1,5 @@
-
 import { Observable, Subject, Subscription, combineLatest, zip, Subscriber } from 'rxjs';
-import { bufferCount, filter, map, pluck, scan, takeUntil, withLatestFrom } from 'rxjs/operators';
+import { bufferCount, filter, map, pluck, scan, skipWhile, takeUntil, withLatestFrom } from 'rxjs/operators';
 import WS from 'ws';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -348,6 +347,13 @@ export class Price extends Subject<number> {
       return new Price(this.pipe(bufferCount(period, 1), reducer));
   }
 
+  /**
+   * Invert the price
+   */
+  inverse(): Price {
+      return new Price(this.pipe(map((val) => 1/val)));
+  }
+
 
   complete(): void {
       if (this._subscription) {
@@ -462,6 +468,10 @@ export class Candles extends Subject<Candle> {
         return new Price(this.pipe(map((c: Candle) => (c.high + c.low + c.close)/3)));
     }
 
+    gain(): Price {
+        return new Price(this.pipe(map((c: Candle) => (c.close - c.open)/c.open)));
+    }
+
     volume(): Price {
         return new Price(this.pipe(pluck('volume')));
     }
@@ -520,7 +530,7 @@ export class Candles extends Subject<Candle> {
 
     /**
      * The Relative Strength Index (RSI) is defined as:
-     * RSI = 100 – 100/ (1 + RS)
+     * RSI = 100 – 100 / (1 + RS)
      * RS = Average Gain of n days UP  / Average Loss of n days DOWN
      * 
      * @param period the period to compare against
@@ -535,7 +545,7 @@ export class Candles extends Subject<Candle> {
             for (const value of values) {
                 if (value.open > value.close) {
                     downCount++;
-                    downGain += (value.close - value.open) / value.open;
+                    downGain -= (value.close - value.open) / value.open;
                 } else {
                     upCount++;
                     upGain += (value.close - value.open) / value.open;
@@ -544,7 +554,7 @@ export class Candles extends Subject<Candle> {
 
             const rs = (upGain / upCount) / (downGain / downCount);
 
-            return 100 - 100 / (1 + rs);
+            return 100 - (100 / (1 + rs));
         });
 
         return new Price(this.pipe(bufferCount(period, 1), reducer));
@@ -754,6 +764,21 @@ export class Candles extends Subject<Candle> {
     }
 }
 
+export class MappedCandles extends Candles {
+    unsubscriber = new Subject<void>();
+    constructor(source: Observable<Candle>) {
+        super();
+
+        source.pipe(takeUntil(this.unsubscriber)).subscribe((c) => this.next(c));
+    }
+
+    unsubscribe(): void {
+        this.unsubscriber.next();
+        this.unsubscriber.complete();
+        super.unsubscribe();
+    }
+}
+
 export class CoinbaseProCandles extends Candles {
   _timeout?: NodeJS.Timeout;
   _interval?: NodeJS.Timeout;
@@ -915,6 +940,31 @@ export class NegativeCrossover extends Decision<number> {
     constructor(a: Price, b: Price) {
         super(a, b, (a, b) => a < b);
     }
+}
+
+export class Distance extends Subject<number> {
+  _subscription: Subscription;
+
+  constructor(a: Price, b: number) {
+      super();
+
+      this._subscription = a
+          .pipe(
+              map((val) => val - b)
+          )
+          .subscribe((decision: number) => {
+              this.next(decision);
+          });
+  }
+
+  inverse(): Observable<number> {
+      return this.pipe(map((val) => 1/val));
+  }
+
+  complete(): void {
+      this._subscription.unsubscribe();
+      super.complete();
+  }
 }
 
 // eslint-disable-next-line
@@ -1123,7 +1173,6 @@ export class SimulationWallet implements Wallet {
     sim!: CoinbaseProSimulation;
     startingPrice = 0;
     endingPrice = 0;
-    lastDollars = 0;
     transactions = 0;
     fees = 0;
 
@@ -1140,7 +1189,6 @@ export class SimulationWallet implements Wallet {
 
         const fee = this.transactionFee * this.dollars;
         this.coins[product] = (this.dollars - fee) / price;
-        this.lastDollars = this.dollars;
         this.dollars = 0;
 
         this.fees += fee;
@@ -1205,7 +1253,7 @@ export class SimulationWallet implements Wallet {
         return (this.endingPrice * entryCoin) * (1 - this.transactionFee);
     }
     get netWorth(): number {
-        return this.dollars || this.lastDollars;
+        return this.dollars || (this.endingPrice * this.coins['ETH-USD'] * (1 - this.transactionFee));
     }
 
     get profit(): number {
@@ -1226,6 +1274,9 @@ export class Broker {
     _sim: CoinbaseProSimulation;
     _alg: (candle: Candles) => AlgorithmResult;
     _wallet: Wallet;
+    
+    _theBigDb: Record<string, Record<string, ExtendedAlgorithmResult>> = {};
+
     constructor(wallet: Wallet, sim: CoinbaseProSimulation, alg: (candle: Candles) => AlgorithmResult) {
         this._sim = sim;
         this._alg = alg;
@@ -1233,16 +1284,17 @@ export class Broker {
     }
 
     async init(): Promise<void> {
-        const theBigDb: Record<string, Record<string, ExtendedAlgorithmResult>> = {};
 
         for (const product of this._sim.products) {
             const candles = new Candles();
             this._sim.pipe(takeUntil(this.unsubscriber), pluck(product), filter((val) => !!val)).subscribe((c) => candles.next(c));
             const algResult = this._alg(candles);
 
+            if (!algResult.rank && product !== 'ETH-USD') continue;
+
             if (product === 'ETH-USD') {
                 candles.pipe(takeUntil(this.unsubscriber)).subscribe((candle) => {
-                    if (!this._wallet.startingPrice) this._wallet.startingPrice = candle.open;
+                    if (!this._wallet.startingPrice) this._wallet.startingPrice = candle.close;
                     this._wallet.endingPrice = candle.close;
                 });
             }
@@ -1274,22 +1326,27 @@ export class Broker {
 
                 const time = results[0] as number;
 
-                if (!theBigDb[time]) theBigDb[time] = {};
+                if (!this._theBigDb[time]) this._theBigDb[time] = {};
 
-                theBigDb[time][product] = intermediateAlgResult;
+                this._theBigDb[time][product] = intermediateAlgResult;
             });
         }
+    }
 
-        await this._sim.init();
-
-        const timestamps = Object.keys(theBigDb).sort((a, b) => parseInt(a) - parseInt(b));
+    calculate(): void {
+        const timestamps = Object.keys(this._theBigDb).sort((a, b) => parseInt(a) - parseInt(b));
 
         for (const timestamp of timestamps) {
-            const val = theBigDb[timestamp];
+            const val = this._theBigDb[timestamp];
 
             if (this._wallet.dollars) {
                 // out of market
-                const options = Object.keys(val).filter((key) => val[key].entry).sort((a, b) => (val[b].rank || 0) - (val[a].rank || 0));
+                let options = ['ETH-USD'];
+                if (Object.keys(val).length > 1) {
+                    options = Object.keys(val).filter((key) => val[key].entry).sort((a, b) => (val[b].rank || 0) - (val[a].rank || 0));
+                }
+
+                if (!val[options[0]]) continue;
 
                 // TODO - stop/limit orders
                 if (options.length && !val[options[0]].exit) {
@@ -1358,8 +1415,6 @@ export class ComparisonBroker {
                 this._wallet.sell(result.close);
             }
         });
-
-        await this._sim.init();
     }
 
     complete(): void {
@@ -1388,4 +1443,51 @@ export function maxStop(entry: Observable<boolean>, candles: Candles, stop = 30)
 
         return 0;
     }), filter((val) => !!val));
+}
+
+export function condenseCandles(c: Candles): Candles {
+    const ratio = CoinbaseGranularity.DAY / CoinbaseGranularity.HOUR;
+
+    const candleMap = c.pipe(skipWhile((c) => {
+        const time = c.time;
+        const timeSinceMidnight = time % (24 * 60 * 60);
+        // 1 hour before the close of the day
+        const timeToSkipTo = CoinbaseGranularity.DAY - CoinbaseGranularity.HOUR;
+        const returnVal = timeSinceMidnight !== timeToSkipTo;
+
+        return returnVal;
+    }), bufferCount(ratio, ratio), map((values) => {
+        // tlhocv: Array<number>
+        const tlhocv = [
+            values[0].time,
+            Math.min(...values.map((val) => val.low)),
+            Math.max(...values.map((val) => val.high)),
+            values[0].open,
+            values[values.length - 1].close,
+            values.reduce((tv, v) => tv + v.volume, 0)
+        ];
+        return new Candle(tlhocv);
+    }));
+
+    const candles = new MappedCandles(candleMap);
+    return candles;
+}
+
+export function jumpCandles(c: Candles): Candles {
+    const ratio = CoinbaseGranularity.DAY / CoinbaseGranularity.HOUR;
+
+    const candleMap = c.pipe(skipWhile((c) => {
+        const time = c.time;
+        const timeSinceMidnight = time % (24 * 60 * 60);
+        // 2 hours before the close of the day
+        const timeToSkipTo = CoinbaseGranularity.DAY - (2*CoinbaseGranularity.HOUR);
+        const returnVal = timeSinceMidnight !== timeToSkipTo;
+
+        return returnVal;
+    }), bufferCount(ratio, ratio), map((values) => {
+        return values[values.length - 1];
+    }));
+
+    const candles = new MappedCandles(candleMap);
+    return candles;
 }

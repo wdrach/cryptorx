@@ -1,32 +1,22 @@
-import { map, withLatestFrom } from 'rxjs/operators';
-import { AlgorithmResult, Candles, Crossover } from '../lib/lib';
+import { AlgorithmResult, Candles, Crossover, Distance } from '../lib/lib';
 
 export default function(candles: Candles):AlgorithmResult {
-    const vwma10 = candles.vwma(10);
-    const vwma20 = candles.vwma(20);
+    const supermacd = candles.volumeWeightedMacdOf(20, 40).takeStoch();
+    const IDEAL_SUPER_MACD = .37;
 
-    // golden cross
+    const macdDistance = new Distance(supermacd, IDEAL_SUPER_MACD);
+
+    const vwma10 = candles.vwma(20);
+    const vwma20 = candles.vwma(50);
+
     const goldenCross = new Crossover(vwma10, vwma20);
-
-    // death cross
     const deathCross = new Crossover(vwma20, vwma10);
-
-    const vol = candles.volume();
-    const sma = vol.sma(30);
-    const daySma = vol.sma(3);
-    const vwmacd = candles.volumeWeightedMacd();
-
-    const rank = sma.pipe(withLatestFrom(daySma, vwmacd), map(([smaVol, recentVol, macd]) => (1/macd) * (recentVol / smaVol)));
 
     return {
         entry: goldenCross,
         exit: deathCross,
-        rank: rank,
+        rank: supermacd,
         state: {
-            goldenCross,
-            deathCross,
-            vwma10,
-            vwma20
         }
     };
 }
