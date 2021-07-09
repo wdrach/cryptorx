@@ -198,11 +198,15 @@ const main = async () => {
 
             const wallet = new SimulationWallet();
             const comparisonWallet = new SimulationWallet();
-            const products = [];
-            for (const product in CoinbaseProduct) {
-                const splitProduct = product.split('_');
-                if (splitProduct[1] === 'USD') {
-                    products.push(splitProduct.join('-') as CoinbaseProduct);
+            let products = [CoinbaseProduct.ETH_USD];
+            if (multi) {
+                products = [];
+
+                for (const product in CoinbaseProduct) {
+                    const splitProduct = product.split('_');
+                    if (splitProduct[1] === 'USD') {
+                        products.push(splitProduct.join('-') as CoinbaseProduct);
+                    }
                 }
             }
 
