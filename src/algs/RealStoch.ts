@@ -1,6 +1,8 @@
 import { zip } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { AlgorithmResult, Candles, Crossover } from '../lib/lib';
+import { AlgorithmResult } from '../lib/streams/alg';
+import { Candles } from '../lib/streams/candles';
+import { Crossover } from '../lib/util/decisions';
 
 export default function(candles: Candles):AlgorithmResult {
     const UPPER = 80;

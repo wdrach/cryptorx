@@ -1,5 +1,7 @@
 import { map } from 'rxjs/operators';
-import { AlgorithmResult, Candles, jumpCandles } from '../lib/lib';
+import { AlgorithmResult } from '../lib/streams/alg';
+import { jumpCandles } from '../lib/streams/broker';
+import { Candles } from '../lib/streams/candles';
 
 export default function(c: Candles):AlgorithmResult {
 

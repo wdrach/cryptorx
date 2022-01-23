@@ -1,4 +1,6 @@
-import { AlgorithmResult, Candles, Crossover, NegativeCrossover } from '../lib/lib';
+import { AlgorithmResult } from '../lib/streams/alg';
+import { Candles } from '../lib/streams/candles';
+import { Crossover, NegativeCrossover } from '../lib/util/decisions';
 
 export default function(candles: Candles): AlgorithmResult {
     const typical = candles.typical();

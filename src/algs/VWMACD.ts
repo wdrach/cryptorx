@@ -1,4 +1,7 @@
-import { AlgorithmResult, Candles, Crossover, safeStop } from '../lib/lib';
+import { AlgorithmResult } from '../lib/streams/alg';
+import { safeStop } from '../lib/streams/broker';
+import { Candles } from '../lib/streams/candles';
+import { Crossover } from '../lib/util/decisions';
 
 export default function(candles: Candles):AlgorithmResult {
     const macd = candles.volumeWeightedMacd();

@@ -71,3 +71,26 @@ The best algs I've found for a given time period are noted in scripts.
 
 #### 1 hour 
 `npm run hourly-cron` is meant to be run once an hour.
+
+
+## The future
+
+As of now, this library does its job pretty well. It can calculate technical analysis indicators on streams of data, fetch things from Coinbase, etc. So, to start, here's what is working:
+* The Candles and Price classes are top tier. They do their job well, and it's a super cool concept
+* The Coinbase API integrations on their own represent TONS of fiddly work
+* The wallet-as-a-class concept is pretty cool as well.
+* The broker concept as it stands is definitely needed. Having the wallet in a self contained class and an individual class to facilitate the data to wallet pipeline is top tier.
+
+Here's what isn't top-tier
+* The implementation of the broker is a bit messy. I think this has to do with the core stream issues that I'll talk about later.
+* AlgorithmResult, and the whole concept of Algorithms in general, has not stood the test of time. There's no room for complex orders, dynamic entry/exit points, probability analysis, etc.
+* Multi currency as a whole needs work. Honestly, probably need to rip it out and rethink it from the start.
+
+Here's what's missing
+* For AlgorithmResult, I think the missing link is a complex order system. Some algs necessitate further analysis than out-of-the-box orders, and it only makes sense that the Broker handles PURELY out of the box orders.
+* We need a DB integration. This is both for speed (no API limits woo!), consistency (storing past results to allow for better comparisons), and storing extra data (no more CoinbaseProduct type)
+* We need a clock input. Streams are the way forward, sure, but the manual combination of those streams in the multicurrency implementation is a disaster. It needs help.
+
+Here's what will be fun:
+* Once the things above are implemented -- cleaner alg management, brokering, and multicurrency -- we can get into the real degenerate stuff.
+* Probability analysis, machine learning, neural networks

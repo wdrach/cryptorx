@@ -1,10 +1,17 @@
 import { combineLatest, of, Subject } from 'rxjs';
-import { bufferCount, delay, filter, map, pluck, takeUntil, withLatestFrom } from 'rxjs/operators';
-import { CoinbaseProCandles, CoinbaseProPrice, log, CoinbaseWallet, AlgorithmResult, CoinbaseProSimulation, SimulationWallet, Broker, ComparisonBroker, Candles, writeState, MappedCandles } from './lib/lib';
+import { bufferCount, filter, map, pluck, takeUntil } from 'rxjs/operators';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 import { promises } from 'fs';
-import { fstat } from 'node:fs';
+
+import dotenv from 'dotenv';
+import { CoinbaseProCandles, CoinbaseProPrice, CoinbaseProSimulation, CoinbaseWallet } from './lib/sources/coinbase';
+import { Candles, MappedCandles } from './lib/streams/candles';
+import { AlgorithmResult } from './lib/streams/alg';
+import { log, writeState } from './lib/util/logging';
+import { SimulationWallet } from './lib/streams/wallet';
+import { Broker, ComparisonBroker } from './lib/streams/broker';
+dotenv.config();
 
 const activeProduct = CoinbaseProduct.ETH_USD;
 

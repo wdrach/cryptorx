@@ -1,4 +1,7 @@
-import { AlgorithmResult, Candles, Crossover, Distance } from '../lib/lib';
+import { AlgorithmResult } from '../lib/streams/alg';
+import { Candles } from '../lib/streams/candles';
+import { Crossover } from '../lib/util/decisions';
+import { Distance } from '../lib/util/math';
 
 export default function(candles: Candles):AlgorithmResult {
     const supermacd = candles.volumeWeightedMacdOf(20, 40).takeStoch();

@@ -1,4 +1,6 @@
-import { AlgorithmResult, Candles, Crossover } from '../lib/lib';
+import { AlgorithmResult } from '../lib/streams/alg';
+import { Candle, Candles } from '../lib/streams/candles';
+import { Crossover } from '../lib/util/decisions';
 
 export default function(candles: Candles):AlgorithmResult {
     const vwma5 = candles.vwma(5 * 24);
