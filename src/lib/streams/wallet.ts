@@ -1,6 +1,6 @@
 import { Subscription } from 'rxjs';
 import { CoinbaseProduct, COINBASE_TRANSACTION_FEE } from '../constants';
-import { CoinbaseProSimulation } from '../sources/coinbase';
+import { PgSimulation } from '../sources/pg';
 
 export interface Wallet {
   dollars: number;
@@ -30,7 +30,7 @@ export class SimulationWallet implements Wallet {
     startingDollars = 1000;
     coins: Record<string, number> = {};
     currentCoin = '';
-    sim!: CoinbaseProSimulation;
+    sim!: PgSimulation;
     startingPrice = 0;
     endingPrice = 0;
     transactions = 0;

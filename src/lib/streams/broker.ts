@@ -1,20 +1,20 @@
 import { Observable, Subject } from 'rxjs';
 import { bufferCount, filter, map, pluck, skipWhile, takeUntil, withLatestFrom } from 'rxjs/operators';
 import { CoinbaseGranularity, CoinbaseProduct } from '../constants';
-import { CoinbaseProSimulation } from '../sources/coinbase';
+import { PgSimulation } from '../sources/pg';
 import { AlgorithmResult, ExtendedAlgorithmResult } from './alg';
 import { Candle, Candles, MappedCandles } from './candles';
 import { Wallet } from './wallet';
 
 export class Broker {
     unsubscriber = new Subject<void>();
-    _sim: CoinbaseProSimulation;
+    _sim: PgSimulation;
     _alg: (candle: Candles) => AlgorithmResult;
     _wallet: Wallet;
     
     _theBigDb: Record<string, Record<string, ExtendedAlgorithmResult>> = {};
 
-    constructor(wallet: Wallet, sim: CoinbaseProSimulation, alg: (candle: Candles) => AlgorithmResult) {
+    constructor(wallet: Wallet, sim: PgSimulation, alg: (candle: Candles) => AlgorithmResult) {
       this._sim = sim;
       this._alg = alg;
       this._wallet = wallet;
@@ -106,10 +106,10 @@ export class Broker {
 
 export class ComparisonBroker {
     unsubscriber = new Subject<void>();
-    _sim: CoinbaseProSimulation;
+    _sim: PgSimulation;
     _alg: (candle: Candles) => AlgorithmResult;
     _wallet: Wallet;
-    constructor(wallet: Wallet, sim: CoinbaseProSimulation, alg: (candle: Candles) => AlgorithmResult) {
+    constructor(wallet: Wallet, sim: PgSimulation, alg: (candle: Candles) => AlgorithmResult) {
       this._sim = sim;
       this._alg = alg;
       this._wallet = wallet;

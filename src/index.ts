@@ -11,7 +11,7 @@ import { AlgorithmResult } from './lib/streams/alg';
 import { log, writeState } from './lib/util/logging';
 import { SimulationWallet } from './lib/streams/wallet';
 import { Broker, ComparisonBroker } from './lib/streams/broker';
-import { init } from './lib/sources/pg';
+import { init, PgSimulation, populate } from './lib/sources/pg';
 dotenv.config();
 
 const activeProduct = CoinbaseProduct.ETH_USD;
@@ -63,6 +63,8 @@ const main = async () => {
 
     let duration = 365 * 24 * 60 * 60 / t;
 
+    await init();
+
     if (sim) {
       const RUN_SIMS = huge ? (multi ? 10 : 100) : (multi ? 1 : 10);
 
@@ -108,7 +110,7 @@ const main = async () => {
           }
         }
 
-        const sim = new CoinbaseProSimulation(products, t, duration);
+        const sim = new PgSimulation(products, t, duration);
         wallet.sim = sim;
         if (comparisonWallet) comparisonWallet.sim = sim;
 
@@ -218,7 +220,7 @@ const main = async () => {
         }
       }
 
-      const sim = new CoinbaseProSimulation(products, t, duration);
+      const sim = new PgSimulation(products, t, duration);
       wallet.sim = sim;
       comparisonWallet.sim = sim;
 
@@ -514,6 +516,7 @@ const main = async () => {
       }
     } else if (scratch) {
       await init();
+      await populate();
     }
   }
 };
