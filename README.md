@@ -73,6 +73,14 @@ The best algs I've found for a given time period are noted in scripts.
 `npm run hourly-cron` is meant to be run once an hour.
 
 
+#### Postgres setup
+To use caching, we use a Postgres DB. Get it setup and then build out the necessary db:
+```
+psql postgres
+CREATE DATABASE cryptorx;
+<ctrl-D>
+```
+
 ## The future
 
 As of now, this library does its job pretty well. It can calculate technical analysis indicators on streams of data, fetch things from Coinbase, etc. So, to start, here's what is working:

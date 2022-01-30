@@ -5,26 +5,26 @@ import { Candles } from '../lib/streams/candles';
 
 export default function(c: Candles):AlgorithmResult {
 
-    const candles = jumpCandles(c);
+  const candles = jumpCandles(c);
 
-    const UPPER = 90;
-    const LOWER = 10;
+  const UPPER = 90;
+  const LOWER = 10;
 
-    const rsi = candles.rsi();
+  const rsi = candles.rsi();
 
-    // rsi is above upper
-    const overbought = rsi.pipe(map((val) => val > UPPER));
+  // rsi is above upper
+  const overbought = rsi.pipe(map((val) => val > UPPER));
   
-    // rsi is below lower
-    const oversold = rsi.pipe(map((val) => val < LOWER));
+  // rsi is below lower
+  const oversold = rsi.pipe(map((val) => val < LOWER));
 
-    return {
-        exit: overbought,
-        entry: oversold,
-        state: {
-            rsi,
-            overbought,
-            oversold,
-        }
-    };
+  return {
+    exit: overbought,
+    entry: oversold,
+    state: {
+      rsi,
+      overbought,
+      oversold,
+    }
+  };
 }

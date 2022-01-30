@@ -4,24 +4,24 @@ import { Candles } from '../lib/streams/candles';
 import { Crossover } from '../lib/util/decisions';
 
 export default function(candles: Candles):AlgorithmResult {
-    const macd = candles.volumeWeightedMacd();
-    const signal = candles.volumeWeightedMacdSignal();
+  const macd = candles.volumeWeightedMacd();
+  const signal = candles.volumeWeightedMacdSignal();
 
-    // macd crosses over signal
-    const bull = new Crossover(macd, signal);
+  // macd crosses over signal
+  const bull = new Crossover(macd, signal);
 
-    // signal crosses over macd
-    const bear = new Crossover(signal, macd);
+  // signal crosses over macd
+  const bear = new Crossover(signal, macd);
 
-    return {
-        exit: bear,
-        entry: bull,
-        exitStop: safeStop(bull, candles),
-        state: {
-            bull,
-            bear,
-            macd,
-            signal
-        }
-    };
+  return {
+    exit: bear,
+    entry: bull,
+    exitStop: safeStop(bull, candles),
+    state: {
+      bull,
+      bear,
+      macd,
+      signal
+    }
+  };
 }
