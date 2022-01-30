@@ -8,59 +8,6 @@ import { Price } from '../streams/price';
 import { Wallet } from '../streams/wallet';
 import { log } from '../util/logging';
 
-export const _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number, endTime?: number):Promise<Candle[]> => {
-  const inputEndTime = endTime;
-  const inputCurrent = current;
-
-  // go forward one candle's worth
-  const startDate = new Date(current);
-  const startStr = startDate.toISOString();
-
-  current += 300*period*1000;
-
-  let cancel = false;
-  if (!endTime) endTime = Date.now();
-  if (endTime <= current) {
-    current = endTime;
-    cancel = true;
-  }
-
-  const endDate = new Date(current);
-  const endStr = endDate.toISOString();
-
-  log(LogLevel.INFO)(`fetching candles for ${product} ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`);
-
-  // bump cur by 1 more candle before updating so we don't overlap that minute
-  current += period*1000;
-
-  const query = 'start=' + startStr + '&end=' + endStr + '&granularity=' + period;
-
-  let data;
-
-  try {
-    data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`);
-  } catch (e) {
-    log(LogLevel.ERROR)('Got an error, likely hit API limits');
-    const prom = new Promise<Candle[]>((resolve) => {
-      setTimeout(async () => {
-        resolve(await _fetchCandles(product, prefetch, period, inputCurrent, inputEndTime));
-      }, 1500);
-    });
-
-    return await prom;
-  }
-
-  if (data) {
-    const body = data.data;
-    const snapshot = body.reverse().map((bucket: Array<number>) => {
-      return new Candle(bucket);
-    });
-    if (!cancel) snapshot.push(...await _fetchCandles(product, prefetch, period, current, endTime));
-    return snapshot;
-  }
-
-  return [];
-};
 
 export class CoinbaseProPrice extends Price {
   constructor(product: CoinbaseProduct = CoinbaseProduct.ETH_USD) {
@@ -111,18 +58,15 @@ export class CoinbaseProCandles extends Candles {
     const startTime = timestamp || (Date.now() - (prefetch * period * 1000));
     const endTime = timestamp ? timestamp + (prefetch * period * 1000) : undefined;
 
-    _fetchCandles(product, prefetch, period, startTime, endTime).then((candles: Array<Candle>) => {
+    this._fetchCandles(product, prefetch, period, startTime, endTime).then(() => {
       log(LogLevel.SUCCESS)('received the initial batch of candles');
-      for (const candle of candles) {
-        this.next(candle);
-      }
 
       if (timestamp) {
         this.complete();
         return;
       }
 
-      let lastTimestamp = candles[candles.length - 1].time;
+      let lastTimestamp = (endTime ?? Date.now()) / 1000;
       const now = Date.now() / 1000;
       const diff = now - lastTimestamp;
       let delay = (2 * period) - diff;
@@ -131,30 +75,70 @@ export class CoinbaseProCandles extends Candles {
       else this.current.next(true);
 
       this._timeout = setTimeout(async () => {
-        const timeoutCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
-        for (const candle of timeoutCandles) {
-          this.next(candle);
-        }
-
+        await this._fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
         if (delay === 0) this.current.next(true);
-
-        lastTimestamp = timeoutCandles[timeoutCandles.length - 1].time;
+        lastTimestamp += period;
 
         this._timeout = setInterval(async () => {
           this.ready.next(true);
-          const intervalCandles = await _fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
-
-          if (intervalCandles.length) {
-            for (const candle of intervalCandles) {
-              this.next(candle);
-            }
-    
-            lastTimestamp = intervalCandles[intervalCandles.length - 1].time;
-          }
+          await this._fetchCandles(product, 2, period, (lastTimestamp + period)*1000);
+          lastTimestamp += period;
         }, 1000 * period);
       }, 1000 * delay);
     });
   }
+  _fetchCandles = async (product: CoinbaseProduct, prefetch: number, period: CoinbaseGranularity, current: number, endTime?: number):Promise<void> => {
+    const inputEndTime = endTime;
+    const inputCurrent = current;
+
+    // go forward one candle's worth
+    const startDate = new Date(current);
+    const startStr = startDate.toISOString();
+
+    current += 300*period*1000;
+
+    let cancel = false;
+    if (!endTime) endTime = Date.now();
+    if (endTime <= current) {
+      current = endTime;
+      cancel = true;
+    }
+
+    const endDate = new Date(current);
+    const endStr = endDate.toISOString();
+
+    log(LogLevel.INFO)(`fetching candles for ${product} ${startDate.toLocaleString()} to ${endDate.toLocaleString()}`);
+
+    // bump cur by 1 more candle before updating so we don't overlap that minute
+    current += period*1000;
+
+    const query = 'start=' + startStr + '&end=' + endStr + '&granularity=' + period;
+
+    let data;
+
+    try {
+      data = await axios.get(`${COINBASE_API}/products/${product}/candles?${query}`);
+    } catch (e) {
+      log(LogLevel.ERROR)('Got an error, likely hit API limits');
+      await (new Promise<void>((resolve) => {
+        setTimeout(async () => {
+          await this._fetchCandles(product, prefetch, period, inputCurrent, inputEndTime);
+          resolve();
+        }, 1500);
+      }));
+      return;
+    }
+
+    if (data) {
+      const body = data.data;
+      body.reverse().forEach((bucket: Array<number>) => {
+        this.next(new Candle(bucket));
+      });
+      if (!cancel) await this._fetchCandles(product, prefetch, period, current, endTime);
+    }
+
+    return;
+  };
 
   unsubscribe(): void {
     if (this._interval) {

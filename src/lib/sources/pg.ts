@@ -1,4 +1,4 @@
-import { Subject } from 'rxjs';
+import { forkJoin, Observable, Subject } from 'rxjs';
 import Sequelize from 'sequelize';
 import { Column, CreatedAt, Model, PrimaryKey, Table, Unique, UpdatedAt, Sequelize as s } from 'sequelize-typescript';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_EARLIEST_TIMESTAMP } from '../constants';
@@ -66,27 +66,66 @@ export const init = async ():Promise<void> => {
 };
 
 export const populate = async ():Promise<void> => {
-  const product = CoinbaseProduct.ETH_USD;
-  const granularity = CoinbaseGranularity.HOUR;
-  const candleCount = (Date.now() - COINBASE_EARLIEST_TIMESTAMP) / 1000 / granularity;
-  const candles = new CoinbaseProCandles(product, Math.ceil(candleCount), granularity, COINBASE_EARLIEST_TIMESTAMP);
-
-  candles.subscribe({
-    next: (candle) => {
-      CandleModel.upsert({
-        timestamp: candle.time,
-        baseCurrency: product.split('-')[0],
-        quoteCurrency: product.split('-')[1],
-        granularity: granularity,
-        low: candle.low,
-        high: candle.high,
-        open: candle.open,
-        close: candle.close,
-        volume: candle.volume,
-        key: product + ':' + candle.time + ',' + granularity,
-      }).catch((e) => console.log(e));
+  for (const p in CoinbaseProduct) {
+    const splitProduct = p.split('_');
+    if (splitProduct[1] !== 'USD') {
+      continue;
     }
-  });
+
+    const product = splitProduct.join('-') as CoinbaseProduct;
+
+    for (const g in CoinbaseGranularity) {
+      const granularity = parseInt(g);
+      if (isNaN(granularity)) continue;
+
+      let startTime = COINBASE_EARLIEST_TIMESTAMP;
+
+      const latestCandle = await CandleModel.findOne(
+        {
+          where: {
+            granularity,
+            baseCurrency: splitProduct[0],
+            quoteCurrency: splitProduct[1]
+          },
+          order: [['timestamp', 'DESC']]
+        }
+      );
+
+      if (latestCandle) {
+        startTime = latestCandle.timestamp * 1000;
+      }
+
+      const candleCount = (Date.now() - startTime) / 1000 / granularity;
+      const candles = new CoinbaseProCandles(product, Math.ceil(candleCount), granularity, startTime);
+    
+      const candleObservables: Observable<void>[] = [];
+
+      await new Promise<void>((res) => {
+        candles.subscribe({
+          next: (candle) => {
+            candleObservables.push(new Observable((subscriber) => {
+              CandleModel.upsert({
+                timestamp: candle.time,
+                baseCurrency: product.split('-')[0],
+                quoteCurrency: product.split('-')[1],
+                granularity: granularity,
+                low: candle.low,
+                high: candle.high,
+                open: candle.open,
+                close: candle.close,
+                volume: candle.volume,
+                key: product + ':' + candle.time + ',' + granularity,
+              }).catch((e) => console.log(e)).then(() => subscriber.complete());
+            }));
+          },
+          complete: () => {
+            console.log('obs completed', candleObservables.length);
+            forkJoin(candleObservables).subscribe(() => res());
+          }
+        });
+      });
+    }
+  }
 };
 
 export class PgCandles extends Candles {
