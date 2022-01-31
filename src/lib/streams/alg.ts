@@ -1,4 +1,5 @@
 import { Observable } from 'rxjs';
+import { Candles } from './candles';
 
 export interface AlgorithmResult {
   entry?: Observable<boolean>;
@@ -13,21 +14,4 @@ export interface AlgorithmResult {
   state?: Record<string, Observable<any>>;
 }
 
-export interface IntermediateAlgorithmResult {
-  entry?: boolean;
-  exit?: boolean;
-
-  entryTarget?: number;
-  exitTarget?:  number;
-  entryStop?:   number;
-  exitStop?:    number;
-
-  rank?: number;
-
-  // eslint-disable-next-line
-  state?: Record<string, Observable<any>>;
-}
-
-export interface ExtendedAlgorithmResult extends IntermediateAlgorithmResult {
-    close?: number;
-}
+export type Algorithm = (candles: Candles) => AlgorithmResult;

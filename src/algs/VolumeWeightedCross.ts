@@ -1,25 +1,14 @@
-import { AlgorithmResult } from '../lib/streams/alg';
-import { Candles } from '../lib/streams/candles';
-import { Crossover } from '../lib/util/decisions';
+import { algBuilder, CandleActions, DecisionActions, SourceActions } from '../lib/util/alg_builder';
 
-export default function(candles: Candles):AlgorithmResult {
-  const vwma10 = candles.vwma(10);
-  const vwma20 = candles.vwma(20);
-
-  // golden cross
-  const goldenCross = new Crossover(vwma10, vwma20);
-
-  // death cross
-  const deathCross = new Crossover(vwma20, vwma10);
-
-  return {
-    entry: goldenCross,
-    exit: deathCross,
-    state: {
-      goldenCross,
-      deathCross,
-      vwma10,
-      vwma20
-    }
-  };
-}
+export default algBuilder({
+  streams: [
+    [[SourceActions.CANDLES], [CandleActions.VWMA, 5]], // vwma[5]
+    [[SourceActions.CANDLES], [CandleActions.VWMA, 20]], // vwma[20]
+    [[SourceActions.STREAM, 0], [DecisionActions.CROSSOVER, 1]], // golden cross
+    [[SourceActions.STREAM, 1], [DecisionActions.CROSSOVER, 0]], // death cross
+  ],
+  algResult: {
+    entry: 2, // golden cross
+    exit: 3,  // death cross
+  }
+});

@@ -1,7 +1,7 @@
 import { map } from 'rxjs/operators';
 import { AlgorithmResult } from '../lib/streams/alg';
-import { jumpCandles } from '../lib/streams/broker';
 import { Candles } from '../lib/streams/candles';
+import { jumpCandles } from '../lib/util/helpers';
 
 export default function(c: Candles):AlgorithmResult {
 

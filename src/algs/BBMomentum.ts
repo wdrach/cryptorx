@@ -1,8 +1,8 @@
 import { bufferCount, map, withLatestFrom } from 'rxjs/operators';
 import { AlgorithmResult } from '../lib/streams/alg';
-import { condenseCandles } from '../lib/streams/broker';
 import { Candles } from '../lib/streams/candles';
 import { Crossover, NegativeCrossover } from '../lib/util/decisions';
+import { condenseCandles } from '../lib/util/helpers';
 
 export default function(candles: Candles): AlgorithmResult {
   const dayCandles = condenseCandles(candles);

@@ -79,26 +79,33 @@ To use caching, we use a Postgres DB. Get it setup and then build out the necess
 psql postgres
 CREATE DATABASE cryptorx;
 <ctrl-D>
+npm start -- -p
 ```
+
+After that, it should be good to go!
 
 ## The future
 
-As of now, this library does its job pretty well. It can calculate technical analysis indicators on streams of data, fetch things from Coinbase, etc. So, to start, here's what is working:
-* The Candles and Price classes are top tier. They do their job well, and it's a super cool concept
-* The Coinbase API integrations on their own represent TONS of fiddly work
-* The wallet-as-a-class concept is pretty cool as well.
-* The broker concept as it stands is definitely needed. Having the wallet in a self contained class and an individual class to facilitate the data to wallet pipeline is top tier.
+* switch "battle" mode to store data in postgres, and validate that it still works
+* Algorithm output should just be an order type, since we can only have 1 open order at any given time. It shouldn't be allowed to have all orders in the result. See the Order Builder below
+* evolutionary ml
+* fetch currencies from coinbase and store them in postgres
+* re-implement multicurrency (it was removed because the implementation was garbage)
+* implement a series of complex order attachments
+* implement a historical probability analysis engine - e.g. based on X, Y, and Z, what's the probability... historically that I'll be in profit sometime in the next T time.
+* tensor flow and proper neural networks?
 
-Here's what isn't top-tier
-* The implementation of the broker is a bit messy. I think this has to do with the core stream issues that I'll talk about later.
-* AlgorithmResult, and the whole concept of Algorithms in general, has not stood the test of time. There's no room for complex orders, dynamic entry/exit points, probability analysis, etc.
-* Multi currency as a whole needs work. Honestly, probably need to rip it out and rethink it from the start.
+## Architecture
+Here's what the architecture kinda looks like with extras of what it's supposed to look like:
+```
+[ Coinbase Provider ] --> [ Postgres Provider ] -(cached data)--> [ Algorithm ] --> [ Broker ] --> [ Wallet ]
+```
+SO:
+ * Coinbase provider gives candle data to the postgres provider, or can give candle data directly to whoever needs it
+ * That cached data is passed into an Algorithm via a "simulation" (or a construction of historical candle data)
+ * The broker runs through the entire stream of alg data and tells the wallet when to buy/sell, what the prices are, etc.
+ * The wallet executes buy/sell commands and keeps books on current balances, profit over time, etc.
 
-Here's what's missing
-* For AlgorithmResult, I think the missing link is a complex order system. Some algs necessitate further analysis than out-of-the-box orders, and it only makes sense that the Broker handles PURELY out of the box orders.
-* We need a DB integration. This is both for speed (no API limits woo!), consistency (storing past results to allow for better comparisons), and storing extra data (no more CoinbaseProduct type)
-* We need a clock input. Streams are the way forward, sure, but the manual combination of those streams in the multicurrency implementation is a disaster. It needs help.
+Most of those are pretty straightforward, but the "magic" is in the algorithm. An algorithm in all reality is just a Turing machine. It takes in the `Candles` stream, performs some logic, and outputs an `AlgorithmResult`, which is just a stream with binary buy/sell signals and prices for stop/limit signals. That `AlgorithmResult` can be interpreted via an Order Builder to turn all of those signals into a single active order type (since we can only have 1 active order at a time). The order is the _true_ output object to the Broker. The point of an algorithm is to splinter the data (via candle processing, TA functions, buffers), then bring that information down a simplified result via `Decisions`, which are ways to combine streams and turn them into a single, boolean output. The final "Decision" to be made is the order type to submit, which is what the order builder does.
 
-Here's what will be fun:
-* Once the things above are implemented -- cleaner alg management, brokering, and multicurrency -- we can get into the real degenerate stuff.
-* Probability analysis, machine learning, neural networks
+The question is - how do we turn this entire algorithm into a single data structure that's not code (which is the easiest way for me to write algorithms).

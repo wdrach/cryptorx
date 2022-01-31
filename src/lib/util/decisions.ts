@@ -3,6 +3,8 @@ import { bufferCount, filter, map } from 'rxjs/operators';
 import { Price } from '../streams/price';
 
 export class Decision<T> extends Subject<boolean> {
+  type = 'decision';
+
   _subscription: Subscription;
 
   constructor(a: Observable<T>, b: Observable<T>, operator: (valA: T, valB: T) => boolean) {

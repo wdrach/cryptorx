@@ -152,53 +152,18 @@ export class CoinbaseProCandles extends Candles {
     super.unsubscribe();
   }
 }
-
-export class CoinbaseProSimulation extends Subject<Record<string, Candle>> {
-    _timestamp: number;
-    products: CoinbaseProduct[];
-    _time: number;
-    _period: number;
-
-    constructor(products: CoinbaseProduct[], period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300, current = false) {
-      super();
-
-      let last = Date.now() - (time * period * 1000);
-      if (last < COINBASE_EARLIEST_TIMESTAMP) {
-        last = COINBASE_EARLIEST_TIMESTAMP;
-      }
-
-      if (current) {
-        this._timestamp = last;
-      } else {
-        this._timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
-      }
-
-      this.products = products;
-      this._time = time;
-      this._period = period;
+export class CoinbaseProSim extends CoinbaseProCandles {
+  constructor(product: CoinbaseProduct, period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300) {
+    let last = Date.now() - (time * period * 1000);
+    if (last < COINBASE_EARLIEST_TIMESTAMP) {
+      last = COINBASE_EARLIEST_TIMESTAMP;
     }
 
-    async init(): Promise<void> {
-      const theBigDb: Record<string, Record<string, Candle>> = {};
-      for (const product of this.products) {
-        await new Promise<void>((res) => {
-          const sim = new CoinbaseProCandles(product, this._time, this._period, this._timestamp);
-          sim.subscribe((candle) => {
-            if (!theBigDb[candle.time]) theBigDb[candle.time] = {};
-            theBigDb[candle.time][product] = candle;
-          });
-          sim.subscribe({complete: () => res()});
-        });
-      }
+    const timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
 
-      const timestamps = Object.keys(theBigDb).sort((a, b) => parseInt(a) - parseInt(b));
-
-      for (const timestamp of timestamps) {
-        super.next(theBigDb[timestamp]);
-      }
-    }
+    super(product, time, period, timestamp);
+  }
 }
-
 interface CoinbaseAccount {
   id: string;
   currency: string;
@@ -213,9 +178,9 @@ export class CoinbaseWallet implements Wallet {
   dollars = 0;
   dollarStream = new Subject<number>();
 
-  currentCoin = '';
+  currentCoin = 'ETH-USD';
   
-  coins: Record<string, number> = {};
+  coins = 0;
   coinStream = new Subject<number>();
 
   inMarket = false;
@@ -262,11 +227,11 @@ export class CoinbaseWallet implements Wallet {
     const accountList = (await this._signAndSend('/accounts') || {}).data;
 
     const dollarAccount = accountList.find((val: CoinbaseAccount) => val.currency === 'USD');
-    const coinAccount = accountList.find((val: CoinbaseAccount) => parseFloat(val.available) > .0001);
+    const coinAccount = accountList.find((val: CoinbaseAccount) => val.currency === 'ETH');
 
     this.dollars = parseFloat(dollarAccount.available);
     if (coinAccount) {
-      this.coins = {[coinAccount.currency]: parseFloat(coinAccount.available)};
+      this.coins = parseFloat(coinAccount.available);
     }
 
     this.inMarket = !!coinAccount;
@@ -278,9 +243,9 @@ export class CoinbaseWallet implements Wallet {
     log(LogLevel.SUCCESS)(`In market: ${this.inMarket}`);
   }
 
-  limitBuy(product: CoinbaseProduct, price: number): void {
+  limitBuy(price: number): void {
     this._signAndSend('/orders', {
-      product_id: product,
+      product_id: 'ETH-USD',
       type: 'limit',
       side: 'buy',
       price: price.toString(),
@@ -288,20 +253,20 @@ export class CoinbaseWallet implements Wallet {
     });
   }
 
-  marketBuy(product: CoinbaseProduct): void {
+  marketBuy(): void {
     log(LogLevel.INFO)(`buying $${this.dollars} worth of ETH at ${(new Date(Date.now())).toLocaleString()}`);
     this._signAndSend('/orders', {
-      product_id: product,
+      product_id: 'ETH-USD',
       type: 'market',
       side: 'buy',
       funds: (Math.floor(this.dollars * 100)/100).toFixed(2)
     });
   }
 
-  buy(product: CoinbaseProduct, price?: number): void {
+  buy(price?: number): void {
     if (this.inMarket) return;
-    if (price) this.limitBuy(product, price);
-    else this.marketBuy(product);
+    if (price) this.limitBuy(price);
+    else this.marketBuy();
 
     this.inMarket = true;
   }
@@ -330,7 +295,7 @@ export class CoinbaseWallet implements Wallet {
     console.log('WOULD BE PUTTING IN A STOP LOSS IF THAT WAS SUPPORTED!', price);
   }
 
-  stopEntry(product: CoinbaseProduct, price: number): void {
+  stopEntry(price: number): void {
     console.log('WOULD BE PUTTING IN A STOP ENTRY IF THAT WAS SUPPORTED!', price);
   }
 

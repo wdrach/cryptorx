@@ -1,10 +1,11 @@
-import { forkJoin, Observable, Subject } from 'rxjs';
+import { forkJoin, Observable } from 'rxjs';
 import Sequelize from 'sequelize';
-import { Column, CreatedAt, Model, PrimaryKey, Table, Unique, UpdatedAt, Sequelize as s } from 'sequelize-typescript';
+import { Column, CreatedAt, Model, PrimaryKey, Table, UpdatedAt, Sequelize as s } from 'sequelize-typescript';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_EARLIEST_TIMESTAMP } from '../constants';
-import { Candle, Candles } from '../streams/candles';
+import { Candles } from '../streams/candles';
 import { CoinbaseProCandles } from './coinbase';
 
+let sequelize: s;
 @Table({ tableName: 'candles' })
 class CandleModel extends Model {
   /**
@@ -57,16 +58,23 @@ class CandleModel extends Model {
   updatedAt!: Date;
 }
 
-export const init = async ():Promise<void> => {
-  const sequelize = new s(process.env.SQL_DB ?? '');
+export const init = async (logging = false):Promise<void> => {
+  sequelize = new s(process.env.SQL_DB ?? '', {logging});
   sequelize.addModels([CandleModel]);
 
   await sequelize.authenticate();
   await CandleModel.sync({alter: true});
 };
 
+export const teardown = async ():Promise<void> => {
+  await sequelize.close();
+};
+
 export const populate = async ():Promise<void> => {
-  for (const p in CoinbaseProduct) {
+  // TODO - we'll add this full loop back in, but I'm focusing
+  // on cleaning up the non-multi-currency bits for the time being
+  //for (const p in CoinbaseProduct) {
+  for (const p of ['ETH_USD']) {
     const splitProduct = p.split('_');
     if (splitProduct[1] !== 'USD') {
       continue;
@@ -74,9 +82,13 @@ export const populate = async ():Promise<void> => {
 
     const product = splitProduct.join('-') as CoinbaseProduct;
 
-    for (const g in CoinbaseGranularity) {
-      const granularity = parseInt(g);
-      if (isNaN(granularity)) continue;
+    // TODO - we either need more memory or to free up coinbase candles as we
+    // go to get to 1 minute
+    //for (const g in CoinbaseGranularity) {
+    //  const granularity = parseInt(g);
+    //  if (isNaN(granularity)) continue;
+
+    for (const granularity of [CoinbaseGranularity.DAY, CoinbaseGranularity.SIX_HOUR, CoinbaseGranularity.HOUR, CoinbaseGranularity.FIFTEEN_MINUTE, CoinbaseGranularity.FIVE_MINUTE]) {
 
       let startTime = COINBASE_EARLIEST_TIMESTAMP;
 
@@ -115,7 +127,10 @@ export const populate = async ():Promise<void> => {
                 close: candle.close,
                 volume: candle.volume,
                 key: product + ':' + candle.time + ',' + granularity,
-              }).catch((e) => console.log(e)).then(() => subscriber.complete());
+              }).catch((e) => console.log(e)).then(() => {
+                subscriber.next();
+                subscriber.complete();
+              });
             }));
           },
           complete: () => {
@@ -157,48 +172,15 @@ export class PgCandles extends Candles {
   }
 }
 
-export class PgSimulation extends Subject<Record<string, Candle>> {
-    _timestamp: number;
-    products: CoinbaseProduct[];
-    _time: number;
-    _period: number;
-
-    constructor(products: CoinbaseProduct[], period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300, current = false) {
-      super();
-
-      let last = Date.now() - (time * period * 1000);
-      if (last < COINBASE_EARLIEST_TIMESTAMP) {
-        last = COINBASE_EARLIEST_TIMESTAMP;
-      }
-
-      if (current) {
-        this._timestamp = last;
-      } else {
-        this._timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
-      }
-
-      this.products = products;
-      this._time = time;
-      this._period = period;
+export class PgSim extends PgCandles {
+  constructor(product: CoinbaseProduct, period: CoinbaseGranularity = CoinbaseGranularity.DAY, time = 300) {
+    let last = Date.now() - (time * period * 1000);
+    if (last < COINBASE_EARLIEST_TIMESTAMP) {
+      last = COINBASE_EARLIEST_TIMESTAMP;
     }
 
-    async init(): Promise<void> {
-      const theBigDb: Record<string, Record<string, Candle>> = {};
-      for (const product of this.products) {
-        await new Promise<void>((res) => {
-          const sim = new PgCandles(product, this._time, this._period, this._timestamp);
-          sim.subscribe((candle) => {
-            if (!theBigDb[candle.time]) theBigDb[candle.time] = {};
-            theBigDb[candle.time][product] = candle;
-          });
-          sim.subscribe({complete: () => res()});
-        });
-      }
+    const timestamp = Math.floor(Math.random() * (last - COINBASE_EARLIEST_TIMESTAMP)) + COINBASE_EARLIEST_TIMESTAMP;
 
-      const timestamps = Object.keys(theBigDb).sort((a, b) => parseInt(a) - parseInt(b));
-
-      for (const timestamp of timestamps) {
-        super.next(theBigDb[timestamp]);
-      }
-    }
+    super(product, time, period, timestamp);
+  }
 }

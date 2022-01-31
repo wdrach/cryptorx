@@ -1,16 +1,17 @@
 import { AlgorithmResult } from '../lib/streams/alg';
-import { Candle, Candles } from '../lib/streams/candles';
+import { Candles } from '../lib/streams/candles';
 import { Crossover } from '../lib/util/decisions';
+import { condenseCandles } from '../lib/util/helpers';
 
 export default function(candles: Candles):AlgorithmResult {
-  const vwma5 = candles.vwma(5 * 24);
-  const vwma10 = candles.vwma(10 * 24);
+  const vwma5 = condenseCandles(candles).vwma(5);
+  const vwma20 = condenseCandles(candles).vwma(20);
 
   // golden cross
-  const goldenCross = new Crossover(vwma5, vwma10);
+  const goldenCross = new Crossover(vwma5, vwma20);
 
   // death cross
-  const deathCross = new Crossover(vwma10, vwma5);
+  const deathCross = new Crossover(vwma20, vwma5);
 
   return {
     entry: goldenCross,
@@ -18,7 +19,7 @@ export default function(candles: Candles):AlgorithmResult {
     state: {
       goldenCross,
       deathCross,
-      vwma10,
+      vwma20,
       vwma5
     }
   };

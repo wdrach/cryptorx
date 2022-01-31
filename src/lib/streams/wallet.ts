@@ -1,26 +1,25 @@
 import { Subscription } from 'rxjs';
-import { CoinbaseProduct, COINBASE_TRANSACTION_FEE } from '../constants';
-import { PgSimulation } from '../sources/pg';
+import { COINBASE_TRANSACTION_FEE } from '../constants';
+import { PgSim } from '../sources/pg';
 
 export interface Wallet {
   dollars: number;
-  coins: Record<string, number>;
-  currentCoin: string;
+  coins: number;
   transactions: number;
   fees: number;
   startingPrice: number;
   endingPrice: number;
 
-  buy(product: CoinbaseProduct, price?: number): void
+  buy(price?: number): void
   sell(price?: number): void
 
-  marketBuy(product: CoinbaseProduct): void
+  marketBuy(): void
   marketSell(): void
 
-  limitBuy(product: CoinbaseProduct, price: number): void
+  limitBuy(price: number): void
   limitSell(price: number): void
 
-  stopEntry(product: CoinbaseProduct, price: number): void
+  stopEntry(price: number): void
   stopLoss(price: number): void
 }
 
@@ -28,9 +27,8 @@ export class SimulationWallet implements Wallet {
     dollars = 1000;
     transactionFee = COINBASE_TRANSACTION_FEE;
     startingDollars = 1000;
-    coins: Record<string, number> = {};
-    currentCoin = '';
-    sim!: PgSimulation;
+    coins = 0;
+    sim!: PgSim;
     startingPrice = 0;
     endingPrice = 0;
     transactions = 0;
@@ -39,16 +37,14 @@ export class SimulationWallet implements Wallet {
     marketSellSub?: Subscription;
     marketBuySub?: Subscription;
 
-    buy(product: CoinbaseProduct, price: number): void {
+    buy(price: number): void {
       if (this.marketBuySub) {
         this.marketBuySub.unsubscribe();
         this.marketBuySub = undefined;
       }
 
-      this.currentCoin = product;
-
       const fee = this.transactionFee * this.dollars;
-      this.coins[product] = (this.dollars - fee) / price;
+      this.coins = (this.dollars - fee) / price;
       this.dollars = 0;
 
       this.fees += fee;
@@ -61,22 +57,20 @@ export class SimulationWallet implements Wallet {
         this.marketSellSub = undefined;
       }
 
-      this.dollars = this.coins[this.currentCoin] * price;
-      const fee = this.transactionFee*price*this.coins[this.currentCoin];
-      this.dollars = (this.coins[this.currentCoin] * price) - fee;
-      this.coins[this.currentCoin] = 0;
-
-      this.currentCoin = '';
+      this.dollars = this.coins * price;
+      const fee = this.transactionFee*price*this.coins;
+      this.dollars = (this.coins * price) - fee;
+      this.coins = 0;
 
       this.fees += fee;
       this.transactions++;
     }
 
-    marketBuy(product: CoinbaseProduct): void {
+    marketBuy(): void {
       if (this.marketBuySub) return;
 
       this.marketBuySub = this.sim.subscribe((result) => {
-        this.buy(product, result[product].close || 0);
+        this.buy(result.close || 0);
       });
     }
 
@@ -85,22 +79,20 @@ export class SimulationWallet implements Wallet {
       if (this.marketSellSub) return;
 
       this.marketSellSub = this.sim.subscribe((result) => {
-        if (this.currentCoin) {
-          this.sell(result[this.currentCoin].close || 0);
-        }
+        this.sell(result.close || 0);
       });
     }
 
-    limitBuy(product: CoinbaseProduct, price: number): void {
-      console.log('LIMIT BUY NOT IMPLEMENTED', product, price);
+    limitBuy(price: number): void {
+      console.log('LIMIT BUY NOT IMPLEMENTED', price);
     }
 
     limitSell(price: number): void {
       console.log('LIMIT SELL NOT IMPLEMENTED', price);
     }
 
-    stopEntry(product: CoinbaseProduct, price: number): void {
-      console.log('STOP ENTRY NOT IMPLEMENTED', product, price);
+    stopEntry(price: number): void {
+      console.log('STOP ENTRY NOT IMPLEMENTED', price);
     }
 
     stopLoss(price: number): void {
@@ -113,7 +105,7 @@ export class SimulationWallet implements Wallet {
       return (this.endingPrice * entryCoin) * (1 - this.transactionFee);
     }
     get netWorth(): number {
-      return this.dollars || (this.endingPrice * this.coins['ETH-USD'] * (1 - this.transactionFee));
+      return this.dollars || (this.endingPrice * this.coins * (1 - this.transactionFee));
     }
 
     get profit(): number {

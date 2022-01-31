@@ -30,6 +30,8 @@ export class Candle {
 }
 
 export class Candles extends Subject<Candle> {
+  type = 'candles';
+
   time(): Observable<number> {
     return this.pipe(pluck('time'));
   }

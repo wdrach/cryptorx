@@ -1,17 +1,18 @@
-import { combineLatest, of, Subject } from 'rxjs';
-import { bufferCount, filter, map, pluck, takeUntil } from 'rxjs/operators';
+import { combineLatest, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
 import { promises } from 'fs';
 
 import dotenv from 'dotenv';
-import { CoinbaseProCandles, CoinbaseProPrice, CoinbaseProSimulation, CoinbaseWallet } from './lib/sources/coinbase';
-import { Candles, MappedCandles } from './lib/streams/candles';
+import { CoinbaseProCandles, CoinbaseProPrice, CoinbaseWallet } from './lib/sources/coinbase';
+import { Candles } from './lib/streams/candles';
 import { AlgorithmResult } from './lib/streams/alg';
-import { log, writeState } from './lib/util/logging';
+import { log } from './lib/util/logging';
 import { SimulationWallet } from './lib/streams/wallet';
-import { Broker, ComparisonBroker } from './lib/streams/broker';
-import { init, PgSimulation, populate } from './lib/sources/pg';
+import { Broker } from './lib/streams/broker';
+import { init, PgSim, populate, teardown } from './lib/sources/pg';
+import { algBuilder } from './lib/util/alg_builder';
 dotenv.config();
 
 const activeProduct = CoinbaseProduct.ETH_USD;
@@ -32,7 +33,7 @@ const main = async () => {
 
     const alg = `./algs/${algName}`;
     // eslint-disable-next-line
-        let activeAlg: (candles: Candles) => AlgorithmResult = require(alg).default;
+    let activeAlg: (candles: Candles) => AlgorithmResult = require(alg).default;
     console.log(alg);
 
     const simIndex  = process.argv.findIndex((val) => val === '-s');
@@ -43,8 +44,8 @@ const main = async () => {
     const sellTest  = process.argv.findIndex((val) => val === '--sell-test') !== -1;
     const buyTest   = process.argv.findIndex((val) => val === '--buy-test') !== -1;
     const scratch   = process.argv.findIndex((val) => val === '-z') !== -1;
-    const dump      = process.argv.findIndex((val) => val === '-d') !== -1;
     const battle    = process.argv.findIndex((val) => val === '-b') !== -1;
+    const initDb    = process.argv.findIndex((val) => val === '-p') !== -1;
 
     const timeIndex = process.argv.findIndex((val) => val === '-t');
     let t: CoinbaseGranularity | undefined;
@@ -92,8 +93,6 @@ const main = async () => {
       let bullProfitOverReplacement = 0;
       let bullCount = 0;
 
-      let comparisonProfit = 0;
-
       for (let i = 0; i < RUN_SIMS; i++) {
         const wallet = new SimulationWallet();
         let comparisonWallet: SimulationWallet | undefined;
@@ -110,20 +109,12 @@ const main = async () => {
           }
         }
 
-        const sim = new PgSimulation(products, t, duration);
+        const sim = new PgSim(CoinbaseProduct.ETH_USD, t, duration);
         wallet.sim = sim;
         if (comparisonWallet) comparisonWallet.sim = sim;
 
         const broker = new Broker(wallet, sim, activeAlg);
-        let comparisonBroker: ComparisonBroker | undefined;
-        if (comparisonWallet) comparisonBroker = new ComparisonBroker(comparisonWallet, sim, activeAlg);
         await broker.init();
-        if (comparisonBroker) await comparisonBroker.init();
-        await sim.init();
-        broker?.calculate();
-        broker.complete();
-        comparisonBroker?.complete();
-
 
         cash += wallet.netWorth;
         expected += wallet.expected;
@@ -156,21 +147,11 @@ const main = async () => {
           bullProfitOverReplacement += wallet.profitOverReplacement;
           bullCount++;
         }
-
-        if (comparisonWallet) {
-          comparisonProfit += comparisonWallet.profit;
-        }
       }
 
       expectedProfit = expectedProfit / RUN_SIMS;
       profit = profit / RUN_SIMS;
       profitOverReplacement = profitOverReplacement / RUN_SIMS;
-
-      let comparisonProfitOverReplacement = 0;
-      if (comparisonProfit) {
-        comparisonProfit = comparisonProfit / RUN_SIMS;
-        comparisonProfitOverReplacement = profit - comparisonProfit;
-      }
 
       console.log(`\nGot ${(cash / RUN_SIMS).toFixed(2)} in the bank`);
       console.log(`would have ${(expected / RUN_SIMS).toFixed(2)} in the bank if I just held`);
@@ -183,12 +164,11 @@ const main = async () => {
       console.log(`In bear markets, you made ${(bearProfit/bearCount).toFixed(2)}% over ${(bearExpectedProfit/bearCount).toFixed(2)}% for a POR of ${(bearProfitOverReplacement/bearCount).toFixed(2)}%`);
       console.log(`In bull markets, you made ${(bullProfit/bullCount).toFixed(2)}% over ${(bullExpectedProfit/bullCount).toFixed(2)}% for a POR of ${(bullProfitOverReplacement/bullCount).toFixed(2)}%`);
       console.log('--------------------------------------------------------------');
-            
-      if (comparisonProfit) {
-        console.log(`Compared to trading the same alg with just ETH-USD (which made ${comparisonProfit.toFixed(2)}%), you had a POR of ${comparisonProfitOverReplacement.toFixed(2)}%`);
-      }
-      console.log('--------------------------------------------------------------');
-      console.log(`${expectedProfit}	${profit}	${profitOverReplacement}	${bearExpectedProfit/bearCount}	${bearProfit/bearCount}	${bearProfitOverReplacement/bearCount}	${bullExpectedProfit/bullCount}	${bullProfit/bullCount}	${bullProfitOverReplacement/bullCount}	${trades / RUN_SIMS}	${fees / RUN_SIMS}	${comparisonProfit}	${comparisonProfitOverReplacement}`);
+      console.log('expected profit | profit | profit over replacement | bear expected profit | bear profit | bear profit over replacement | bull expected profit | bull profit | bull profit over replacement | trades per sim | fees per sim');
+      console.log('You can copy the following line and paste into excel!');
+      console.log(`${expectedProfit}	${profit}	${profitOverReplacement}	${bearExpectedProfit/bearCount}	${bearProfit/bearCount}	${bearProfitOverReplacement/bearCount}	${bullExpectedProfit/bullCount}	${bullProfit/bullCount}	${bullProfitOverReplacement/bullCount}	${trades / RUN_SIMS}	${fees / RUN_SIMS}`);
+
+      await teardown();
     } else if (battle) {
       duration = 90 * 24 * 60 * 60 / t;
 
@@ -220,7 +200,7 @@ const main = async () => {
         }
       }
 
-      const sim = new PgSimulation(products, t, duration);
+      const sim = new PgSim(CoinbaseProduct.ETH_USD, t, duration);
       wallet.sim = sim;
       comparisonWallet.sim = sim;
 
@@ -228,11 +208,6 @@ const main = async () => {
       const comparisonBroker = new Broker(comparisonWallet, sim, alg2);
       await broker.init();
       await comparisonBroker.init();
-      await sim.init();
-      broker.calculate();
-      comparisonBroker.calculate();
-      broker.complete();
-      comparisonBroker.complete();
 
       if (wallet.expectedProfit < 0) {
         log(LogLevel.ERROR)(`This was a bear market, expected profit was ${wallet.expectedProfit}`);
@@ -306,6 +281,8 @@ const main = async () => {
       rankings[randomAlg2] = alg2Rank;
 
       await promises.writeFile('./rankings.json', JSON.stringify(rankings, null, 2));
+    
+    // TODO - verify this still works lol
     } else if (cron) {
       if (defaultAlg) {
         switch (t) {
@@ -348,7 +325,7 @@ const main = async () => {
             wallet.sell();
           } else if (entry && !exit) {
             console.log('buying!');
-            wallet.buy(CoinbaseProduct.ETH_USD);
+            wallet.buy();
           } else {
             console.log('exit === entry');
           }
@@ -364,159 +341,13 @@ const main = async () => {
       if (sellTest) {
         wallet.sell();
       } else {
-        wallet.buy(CoinbaseProduct.ETH_USD);
+        wallet.buy();
       }
-    } else if (dump) {
-      let allProducts = [CoinbaseProduct.ETH_USD];
-      if (multi) {
-        allProducts = [];
-
-        for (const product in CoinbaseProduct) {
-          const splitProduct = product.split('_');
-          if (splitProduct[1] === 'USD') {
-            allProducts.push(splitProduct.join('-') as CoinbaseProduct);
-          }
-        }
-      }
-
-      const dur = 5*365 * 24 * 60 * 60 / t;
-
-      const sim = new CoinbaseProSimulation(allProducts, t, dur);
-
-      for (const product of sim.products) {
-        const candles = new Candles();
-        sim.pipe(pluck(product), filter((val) => !!val)).subscribe((c) => candles.next(c));
-
-        const delayed = new MappedCandles(candles.pipe(bufferCount(2, 1), map(([prev,]) => prev)));
-
-        const close = candles.close();
-        const delayedClose = delayed.close();
-
-        writeState({
-          'product': of(product),
-          'time': candles.time(),
-          'low': candles.low(),
-          'high': candles.high(),
-          'open': candles.open(),
-          'close': candles.close(),
-          'gain': candles.gain(),
-          /*
-                    'previous stoch vwmacd 5 10': candles.volumeWeightedMacdOf(5, 10).takeStoch(),
-                    'previous stoch vwmacd 10 20': candles.volumeWeightedMacdOf(10, 20).takeStoch(),
-                    'previous stoch vwmacd 20 30': candles.volumeWeightedMacdOf(20, 30).takeStoch(),
-                    'previous stoch vwmacd 10 30': candles.volumeWeightedMacdOf(10, 30).takeStoch(),
-                    'previous stoch vwmacd 10 50': candles.volumeWeightedMacdOf(10, 50).takeStoch(),
-                    'previous stoch vwmacd 20 50': candles.volumeWeightedMacdOf(20, 50).takeStoch(),
-                    'previous stoch vwmacd 10 100': candles.volumeWeightedMacdOf(10, 100).takeStoch(),
-                    'previous stoch vwmacd 20 100': candles.volumeWeightedMacdOf(20, 100).takeStoch(),
-                    'previous stoch vwmacd 50 100': candles.volumeWeightedMacdOf(50, 100).takeStoch(),
-                    'previous low': delayed.low(),
-                    'previous high': delayed.high(),
-                    'previous open': delayed.open(),
-                    'previous close': delayed.close(),
-                    'previous gain': delayed.gain(),
-                    'previous typical': delayed.typical(),
-                    'previous stoch': delayed.stoch(),
-                    'previous stochD': delayed.stochD(),
-                    'previous stochSlow': delayed.stochSlow(),
-                    'previous stochSlowD': delayed.stochSlowD(),
-                    'previous rsi': delayed.rsi(),
-                    'previous smoothedRsi': delayed.smoothedRsi(),
-                    'previous obv': delayed.obv(),
-                    'previous stoch obv': delayed.obv().takeStoch(),
-                    'previous vwma10': delayed.vwma(10),
-                    'previous vwma14': delayed.vwma(14),
-                    'previous vwma20': delayed.vwma(20),
-                    'previous vwma40': delayed.vwma(40),
-                    'previous vwma50': delayed.vwma(50),
-                    'previous vwma100': delayed.vwma(100),
-                    'previous vwma200': delayed.vwma(200),
-                    'previous vwbbUpper': delayed.volumeWeightedBollingerBand(true, 20, 2),
-                    'previous vwbbLower': delayed.volumeWeightedBollingerBand(false, 20, 2),
-                    'previous vwbbUpper3': delayed.volumeWeightedBollingerBand(false, 20, 3),
-                    'previous vwbbLower3': delayed.volumeWeightedBollingerBand(false, 20, 3),
-                    'previous vwmacd': delayed.volumeWeightedMacd(),
-                    'previous vwmacdSig': delayed.volumeWeightedMacdSignal(),
-                    'previous mfi': delayed.mfi(),
-                    'previous stochRsi': delayed.stochRsi(),
-                    'previous stoch': delayed.stoch(),
-                    'previous sma5': delayedClose.sma5(),
-                    'previous sma20': delayedClose.sma20(),
-                    'previous sma30': delayedClose.sma30(),
-                    'previous sma50': delayedClose.sma50(),
-                    'previous sma100': delayedClose.sma100(),
-                    'previous sma200': delayedClose.sma200(),
-                    'previous ema5': delayedClose.ema5(),
-                    'previous ema20': delayedClose.ema20(),
-                    'previous ema30': delayedClose.ema30(),
-                    'previous ema50': delayedClose.ema50(),
-                    'previous ema100': delayedClose.ema100(),
-                    'previous ema200': delayedClose.ema200(),
-                    'previous bbu': delayedClose.bollingerBand(true, 20, 2),
-                    'previous bbl': delayedClose.bollingerBand(false, 20, 2),
-                    'previous bbu3': delayedClose.bollingerBand(true, 20, 3),
-                    'previous bbl3': delayedClose.bollingerBand(false, 20, 3),
-                    'previous bbemau': delayedClose.bollingerBandEma(true, 20, 2),
-                    'previous bbemal': delayedClose.bollingerBandEma(false, 20, 2),
-                    'previous bbemau3': delayedClose.bollingerBandEma(true, 20, 3),
-                    'previous bbemal3': delayedClose.bollingerBandEma(false, 20, 3),
-                    'previous macd': delayedClose.macd(),
-                    'previous macdSignal': delayedClose.macdSignal(),
-                    'previous roc': delayedClose.roc(),
-                    'typical': candles.typical(),
-                    'stoch': candles.stoch(),
-                    'stochD': candles.stochD(),
-                    'stochSlow': candles.stochSlow(),
-                    'stochSlowD': candles.stochSlowD(),
-                    'rsi': candles.rsi(),
-                    'smoothedRsi': candles.smoothedRsi(),
-                    'obv': candles.obv(),
-                    'vwma10': candles.vwma(10),
-                    'vwma14': candles.vwma(14),
-                    'vwma20': candles.vwma(20),
-                    'vwma40': candles.vwma(40),
-                    'vwma50': candles.vwma(50),
-                    'vwma100': candles.vwma(100),
-                    'vwma200': candles.vwma(200),
-                    'vwbbUpper': candles.volumeWeightedBollingerBand(true, 20, 2),
-                    'vwbbLower': candles.volumeWeightedBollingerBand(false, 20, 2),
-                    'vwbbUpper3': candles.volumeWeightedBollingerBand(false, 20, 3),
-                    'vwbbLower3': candles.volumeWeightedBollingerBand(false, 20, 3),
-                    'vwmacd': candles.volumeWeightedMacd(),
-                    'vwmacdSig': candles.volumeWeightedMacdSignal(),
-                    'mfi': candles.mfi(),
-                    'stochRsi': candles.stochRsi(),
-                    'sma5': close.sma5(),
-                    'sma20': close.sma20(),
-                    'sma30': close.sma30(),
-                    'sma50': close.sma50(),
-                    'sma100': close.sma100(),
-                    'sma200': close.sma200(),
-                    'ema5': close.ema5(),
-                    'ema20': close.ema20(),
-                    'ema30': close.ema30(),
-                    'ema50': close.ema50(),
-                    'ema100': close.ema100(),
-                    'ema200': close.ema200(),
-                    'bbu': close.bollingerBand(true, 20, 2),
-                    'bbl': close.bollingerBand(false, 20, 2),
-                    'bbu3': close.bollingerBand(true, 20, 3),
-                    'bbl3': close.bollingerBand(false, 20, 3),
-                    'bbemau': close.bollingerBandEma(true, 20, 2),
-                    'bbemal': close.bollingerBandEma(false, 20, 2),
-                    'bbemau3': close.bollingerBandEma(true, 20, 3),
-                    'bbemal3': close.bollingerBandEma(false, 20, 3),
-                    'macd': close.macd(),
-                    'macdSignal': close.macdSignal(),
-                    'roc': close.roc(),
-                    */
-        }, candles.time(), 'test.csv');
-
-        await sim.init();
-      }
-    } else if (scratch) {
-      await init();
+    } else if (initDb) {
+      await init(true);
       await populate();
+    } else if (scratch) {
+      console.log('hello world');
     }
   }
 };

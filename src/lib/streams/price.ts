@@ -4,6 +4,7 @@ import { bollingerBand, stddev } from '../util/math';
 
 /** A class for handling number streams with a mathematical boost */
 export class Price extends Subject<number> {
+  type = 'price';
   _subscription: Subscription | undefined;
 
   /**

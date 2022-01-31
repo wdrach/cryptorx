@@ -31,7 +31,7 @@
     "test": "jest",
     "lint": "eslint src",
     "build": "tsc -p .",
-    "start": "ts-node --max-old-space-size=8000 src/index.ts",
+    "start": "ts-node src/index.ts",
     "daily-cron": "ts-node src/index.ts -t DAY -c",
     "hourly-cron": "ts-node src/index.ts -t HOUR -c",
     "sell-test": "ts-node src/index.ts --sell-test",
