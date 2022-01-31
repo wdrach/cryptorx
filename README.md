@@ -86,9 +86,8 @@ After that, it should be good to go!
 
 ## The future
 
-* switch "battle" mode to store data in postgres, and validate that it still works
-* Algorithm output should just be an order type, since we can only have 1 open order at any given time. It shouldn't be allowed to have all orders in the result. See the Order Builder below
 * evolutionary ml
+* Algorithm output should just be an order type, since we can only have 1 open order at any given time. It shouldn't be allowed to have all orders in the result. See the Order Builder below
 * fetch currencies from coinbase and store them in postgres
 * re-implement multicurrency (it was removed because the implementation was garbage)
 * implement a series of complex order attachments
@@ -107,5 +106,3 @@ SO:
  * The wallet executes buy/sell commands and keeps books on current balances, profit over time, etc.
 
 Most of those are pretty straightforward, but the "magic" is in the algorithm. An algorithm in all reality is just a Turing machine. It takes in the `Candles` stream, performs some logic, and outputs an `AlgorithmResult`, which is just a stream with binary buy/sell signals and prices for stop/limit signals. That `AlgorithmResult` can be interpreted via an Order Builder to turn all of those signals into a single active order type (since we can only have 1 active order at a time). The order is the _true_ output object to the Broker. The point of an algorithm is to splinter the data (via candle processing, TA functions, buffers), then bring that information down a simplified result via `Decisions`, which are ways to combine streams and turn them into a single, boolean output. The final "Decision" to be made is the order type to submit, which is what the order builder does.
-
-The question is - how do we turn this entire algorithm into a single data structure that's not code (which is the easiest way for me to write algorithms).

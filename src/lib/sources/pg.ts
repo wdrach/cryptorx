@@ -2,7 +2,10 @@ import { forkJoin, Observable } from 'rxjs';
 import Sequelize from 'sequelize';
 import { Column, CreatedAt, Model, PrimaryKey, Table, UpdatedAt, Sequelize as s } from 'sequelize-typescript';
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_EARLIEST_TIMESTAMP } from '../constants';
+import { AlgModel } from '../exec/battle';
 import { Candles } from '../streams/candles';
+import { Price } from '../streams/price';
+import { CandleActions, DecisionActions, PriceActions, SourceActions } from '../util/alg_builder';
 import { CoinbaseProCandles } from './coinbase';
 
 let sequelize: s;
@@ -60,10 +63,11 @@ class CandleModel extends Model {
 
 export const init = async (logging = false):Promise<void> => {
   sequelize = new s(process.env.SQL_DB ?? '', {logging});
-  sequelize.addModels([CandleModel]);
+  sequelize.addModels([CandleModel, AlgModel]);
 
   await sequelize.authenticate();
   await CandleModel.sync({alter: true});
+  await AlgModel.sync({alter: true});
 };
 
 export const teardown = async ():Promise<void> => {
@@ -88,7 +92,7 @@ export const populate = async ():Promise<void> => {
     //  const granularity = parseInt(g);
     //  if (isNaN(granularity)) continue;
 
-    for (const granularity of [CoinbaseGranularity.DAY, CoinbaseGranularity.SIX_HOUR, CoinbaseGranularity.HOUR, CoinbaseGranularity.FIFTEEN_MINUTE, CoinbaseGranularity.FIVE_MINUTE]) {
+    for (const granularity of [CoinbaseGranularity.DAY, CoinbaseGranularity.SIX_HOUR, CoinbaseGranularity.HOUR, CoinbaseGranularity.FIFTEEN_MINUTE]) {
 
       let startTime = COINBASE_EARLIEST_TIMESTAMP;
 
@@ -141,6 +145,197 @@ export const populate = async ():Promise<void> => {
       });
     }
   }
+
+  await seedAlgs();
+};
+
+/**
+ * seedAlgs adds some basic algs to the postgres db so that we can start our generative algorithm!
+ */
+export const seedAlgs = async (): Promise<void> => {
+  // volume weighted cross
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.VWMA, 5]], // vwma[5]
+        [[SourceActions.CANDLES], [CandleActions.VWMA, 20]], // vwma[20]
+        [[SourceActions.STREAM, 0], [DecisionActions.CROSSOVER, 1]], // golden cross
+        [[SourceActions.STREAM, 1], [DecisionActions.CROSSOVER, 0]], // death cross
+      ],
+      algResult: {
+        entry: 2, // golden cross
+        exit: 3,  // death cross
+      }
+    }),
+  });
+
+  // normal golden/death cross
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.TYPICAL]],  // typical
+        [[SourceActions.STREAM, 0], [PriceActions.SMA, 5]],  // sma[5]
+        [[SourceActions.STREAM, 0], [PriceActions.SMA, 20]], // sma[20]
+        [[SourceActions.STREAM, 1], [DecisionActions.CROSSOVER, 2]], // golden cross
+        [[SourceActions.STREAM, 2], [DecisionActions.CROSSOVER, 1]], // death cross
+      ],
+      algResult: {
+        entry: 3, // golden cross
+        exit: 4,  // death cross
+      }
+    }),
+  });
+
+  // RSI
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.RSI]],  // rsi
+        [[SourceActions.STREAM, 0], [DecisionActions.GT, 75]], // overbought
+        [[SourceActions.STREAM, 0], [DecisionActions.LT, 25]], // oversold
+      ],
+      algResult: {
+        entry: 2, // oversold
+        exit: 1,  // overbought
+      }
+    }),
+  });
+
+  // MFI
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.MFI]],  // mfi
+        [[SourceActions.STREAM, 0], [DecisionActions.GT, 90]], // overbought
+        [[SourceActions.STREAM, 0], [DecisionActions.LT, 30]], // oversold
+      ],
+      algResult: {
+        entry: 2, // oversold
+        exit: 1,  // overbought
+      }
+    }),
+  });
+
+  // BBANDS
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.TYPICAL]],  // typical 
+        [[SourceActions.STREAM, 0], [PriceActions.BBAND, 1]], // upper
+        [[SourceActions.STREAM, 0], [PriceActions.BBAND, 0]], // lower
+        [[SourceActions.STREAM, 0], [DecisionActions.CROSSOVER, 1]], // cross high
+        [[SourceActions.STREAM, 0], [DecisionActions.NEGCROSSOVER, 2]], // cross low
+      ],
+      algResult: {
+        entry: 4, // oversold
+        exit: 3,  // overbought
+      }
+    }),
+  });
+
+  // HODL
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.HIGH]],
+        [[SourceActions.STREAM, 0], [DecisionActions.GT, 0]], // always buy
+        [[SourceActions.STREAM, 0], [DecisionActions.LT, 0]], // never sell
+      ],
+      algResult: {
+        entry: 1,
+        exit: 2,
+      }
+    }),
+  });
+
+  // MACD
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.TYPICAL]],  // typical 
+        [[SourceActions.STREAM, 0], [PriceActions.MACD]], // macd
+        [[SourceActions.STREAM, 0], [PriceActions.MACDSIG]], // signal
+        [[SourceActions.STREAM, 1], [DecisionActions.CROSSOVER, 2]], // macd > sig --> bull
+        [[SourceActions.STREAM, 1], [DecisionActions.NEGCROSSOVER, 2]], // sig > macd --> bear
+      ],
+      algResult: {
+        entry: 3, // bull
+        exit: 4,  // bear
+      }
+    }),
+  });
+
+  // VW MACD
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.VWMACD]], // macd
+        [[SourceActions.CANDLES], [CandleActions.VWMACDSIG]], // signal
+        [[SourceActions.STREAM, 0], [DecisionActions.CROSSOVER, 1]], // macd > sig --> bull
+        [[SourceActions.STREAM, 0], [DecisionActions.NEGCROSSOVER, 1]], // sig > macd --> bear
+      ],
+      algResult: {
+        entry: 2, // bull
+        exit: 3,  // bear
+      }
+    }),
+  });
 };
 
 export class PgCandles extends Candles {

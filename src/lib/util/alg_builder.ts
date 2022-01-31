@@ -1,7 +1,7 @@
 import { Algorithm } from '../streams/alg';
 import { Candles } from '../streams/candles';
 import { Price } from '../streams/price';
-import { Crossover, Decision, NegativeCrossover } from './decisions';
+import { Crossover, Decision, GreaterThan, LessThan, NegativeCrossover } from './decisions';
 
 export enum SourceActions {
   CANDLES = 'candles',
@@ -11,6 +11,8 @@ export enum SourceActions {
 export enum DecisionActions {
   CROSSOVER = 'crossover',
   NEGCROSSOVER = 'negativecrossover',
+  GT = 'greaterthan',
+  LT = 'lessthan'
 }
 
 export enum CandleActions {
@@ -40,7 +42,7 @@ export enum CandleActions {
   VWMACDOF    = 'vwmacdof',
   VWMACD      = 'vwmacd',
   VWMACDSIGOF = 'vwmacdsigof',
-  VWMACDSIG   = 'vwmacd',
+  VWMACDSIG   = 'vwmacdsig',
 }
 
 export enum PriceActions {
@@ -110,6 +112,12 @@ export const algBuilder = (algToProcess: MachineAlgorithm):Algorithm => {
             break;
           case DecisionActions.NEGCROSSOVER:
             str = new NegativeCrossover(stream, processedStreams[action[1] as number] as Price);
+            break;
+          case DecisionActions.GT:
+            str = new GreaterThan(stream, action[1] as number);
+            break;
+          case DecisionActions.LT:
+            str = new LessThan(stream, action[1] as number);
             break;
           
           // Actual price actions

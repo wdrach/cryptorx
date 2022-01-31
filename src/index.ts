@@ -2,8 +2,6 @@ import { combineLatest, Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { CoinbaseGranularity, LogLevel, CoinbaseProduct } from './lib/constants';
 
-import { promises } from 'fs';
-
 import dotenv from 'dotenv';
 import { CoinbaseProCandles, CoinbaseProPrice, CoinbaseWallet } from './lib/sources/coinbase';
 import { Candles } from './lib/streams/candles';
@@ -12,7 +10,8 @@ import { log } from './lib/util/logging';
 import { SimulationWallet } from './lib/streams/wallet';
 import { Broker } from './lib/streams/broker';
 import { init, PgSim, populate, teardown } from './lib/sources/pg';
-import { algBuilder } from './lib/util/alg_builder';
+
+import battleRunner from './lib/exec/battle';
 dotenv.config();
 
 const activeProduct = CoinbaseProduct.ETH_USD;
@@ -170,118 +169,9 @@ const main = async () => {
 
       await teardown();
     } else if (battle) {
-      duration = 90 * 24 * 60 * 60 / t;
+      await battleRunner(t);
+      await teardown();
 
-      const algs = await promises.readdir('./src/algs');
-      const randomIndex = Math.floor(Math.random() * algs.length);
-      const randomAlg1 = algs[randomIndex].replace('.ts', '');
-      // eslint-disable-next-line
-            const alg1: (candles: Candles) => AlgorithmResult = require(`./algs/${randomAlg1}`).default;
-      algs.splice(randomIndex, 1);
-
-      const randomIndex2 = Math.floor(Math.random() * algs.length);
-      const randomAlg2 = algs[randomIndex2].replace('.ts', '');
-      // eslint-disable-next-line
-            const alg2: (candles: Candles) => AlgorithmResult = require(`./algs/${randomAlg2}`).default;
-
-      log(LogLevel.SUCCESS)(`ALG SHOWDOWN: ${randomAlg1} vs ${randomAlg2}`);
-
-      const wallet = new SimulationWallet();
-      const comparisonWallet = new SimulationWallet();
-      let products = [CoinbaseProduct.ETH_USD];
-      if (multi) {
-        products = [];
-
-        for (const product in CoinbaseProduct) {
-          const splitProduct = product.split('_');
-          if (splitProduct[1] === 'USD') {
-            products.push(splitProduct.join('-') as CoinbaseProduct);
-          }
-        }
-      }
-
-      const sim = new PgSim(CoinbaseProduct.ETH_USD, t, duration);
-      wallet.sim = sim;
-      comparisonWallet.sim = sim;
-
-      const broker = new Broker(wallet, sim, alg1);
-      const comparisonBroker = new Broker(comparisonWallet, sim, alg2);
-      await broker.init();
-      await comparisonBroker.init();
-
-      if (wallet.expectedProfit < 0) {
-        log(LogLevel.ERROR)(`This was a bear market, expected profit was ${wallet.expectedProfit}`);
-      } else {
-        log(LogLevel.SUCCESS)(`This was a bull market, expected profit was ${wallet.expectedProfit}`);
-      }
-
-      const file = await promises.readFile('./rankings.json');
-      const rankings = JSON.parse(file.toString());
-
-      const alg1Rank = rankings[randomAlg1] ?? {all: 1000, bull: 1000, bear: 1000, allCount: 1, bullCount: 1, bearCount: 1, por: 0};
-      const alg2Rank = rankings[randomAlg2] ?? {all: 1000, bull: 1000, bear: 1000, allCount: 1, bullCount: 1, bearCount: 1, por: 0};
-
-      alg1Rank.por = ((alg1Rank.por * (alg1Rank.allCount)) + wallet.profitOverReplacement)/alg1Rank.allCount;
-      alg2Rank.por = ((alg2Rank.por * (alg2Rank.allCount)) + comparisonWallet.profitOverReplacement)/alg2Rank.allCount;
-
-      alg1Rank.allCount++;
-      alg2Rank.allCount++;
-
-      const alg1All = alg1Rank.all;
-      const alg2All = alg2Rank.all;
-      const alg1Bear = alg1Rank.bear;
-      const alg2Bear = alg2Rank.bear;
-      const alg1Bull = alg1Rank.bull;
-      const alg2Bull = alg2Rank.bull;
-
-
-      if (wallet.profit > comparisonWallet.profit) {
-        log(LogLevel.INFO)(`${randomAlg1} won with a POR of ${wallet.profitOverReplacement}, beating ${randomAlg2}'s POR of ${comparisonWallet.profitOverReplacement}`);
-
-        alg1Rank.all = ((alg1All * (alg1Rank.allCount - 1)) + (alg2All + 400)) / alg1Rank.allCount;
-        alg2Rank.all = ((alg2All * (alg2Rank.allCount - 1)) + (alg1All - 400)) / alg2Rank.allCount;
-
-        if (wallet.expectedProfit < 0) {
-          alg1Rank.bearCount++;
-          alg2Rank.bearCount++;
-
-          alg1Rank.bear = ((alg1Bear * (alg1Rank.bearCount - 1)) + (alg2Bear + 400)) / alg1Rank.bearCount;
-          alg2Rank.bear = ((alg2Bear * (alg2Rank.bearCount - 1)) + (alg1Bear - 400)) / alg2Rank.bearCount;
-        } else {
-          alg1Rank.bullCount++;
-          alg2Rank.bullCount++;
-
-          alg1Rank.bull = ((alg1Bull * (alg1Rank.bullCount - 1)) + (alg2Bull + 400)) / alg1Rank.bullCount;
-          alg2Rank.bull = ((alg2Bull * (alg2Rank.bullCount - 1)) + (alg1Bull - 400)) / alg2Rank.bullCount;
-        }
-      } else if (wallet.profit === comparisonWallet.profit) {
-        log(LogLevel.INFO)(`Draw, with POR of ${wallet.profitOverReplacement}`);
-      } else {
-        log(LogLevel.INFO)(`${randomAlg2} won with a POR of ${comparisonWallet.profitOverReplacement}, beating ${randomAlg1}'s POR of ${wallet.profitOverReplacement}`);
-
-        alg2Rank.all = ((alg2All * (alg2Rank.allCount - 1)) + (alg1All + 400)) / alg2Rank.allCount;
-        alg1Rank.all = ((alg1All * (alg1Rank.allCount - 1)) + (alg2All - 400)) / alg1Rank.allCount;
-
-        if (wallet.expectedProfit < 0) {
-          alg2Rank.bearCount++;
-          alg1Rank.bearCount++;
-
-          alg2Rank.bear = ((alg2Bear * (alg2Rank.bearCount - 1)) + (alg1Bear + 400)) / alg2Rank.bearCount;
-          alg1Rank.bear = ((alg1Bear * (alg1Rank.bearCount - 1)) + (alg2Bear - 400)) / alg1Rank.bearCount;
-        } else {
-          alg1Rank.bullCount++;
-          alg2Rank.bullCount++;
-
-          alg2Rank.bull = ((alg2Bull * (alg2Rank.bullCount - 1)) + (alg1Bull + 400)) / alg2Rank.bullCount;
-          alg1Rank.bull = ((alg1Bull * (alg1Rank.bullCount - 1)) + (alg2Bull - 400)) / alg1Rank.bullCount;
-        }
-      }
-
-      rankings[randomAlg1] = alg1Rank;
-      rankings[randomAlg2] = alg2Rank;
-
-      await promises.writeFile('./rankings.json', JSON.stringify(rankings, null, 2));
-    
     // TODO - verify this still works lol
     } else if (cron) {
       if (defaultAlg) {
@@ -346,6 +236,7 @@ const main = async () => {
     } else if (initDb) {
       await init(true);
       await populate();
+      await teardown();
     } else if (scratch) {
       console.log('hello world');
     }

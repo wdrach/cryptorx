@@ -1,4 +1,4 @@
-import { combineLatest, Observable, Subject, Subscription } from 'rxjs';
+import { combineLatest, Observable, of, Subject, Subscription } from 'rxjs';
 import { bufferCount, filter, map } from 'rxjs/operators';
 import { Price } from '../streams/price';
 
@@ -37,5 +37,17 @@ export class Crossover extends Decision<number> {
 export class NegativeCrossover extends Decision<number> {
   constructor(a: Price, b: Price) {
     super(a, b, (a, b) => a < b);
+  }
+}
+
+export class LessThan extends Decision<number> {
+  constructor(a: Price, b: number) {
+    super(a, of(b), (a, b) => a < b);
+  }
+}
+
+export class GreaterThan extends Decision<number> {
+  constructor(a: Price, b: number) {
+    super(a, of(b), (a, b) => a < b);
   }
 }
