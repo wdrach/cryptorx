@@ -11,8 +11,10 @@ export enum SourceActions {
 export enum DecisionActions {
   CROSSOVER = 'crossover',
   NEGCROSSOVER = 'negativecrossover',
-  GT = 'greaterthan',
-  LT = 'lessthan'
+  GT  = 'greaterthan',
+  LT  = 'lessthan',
+  OR  = 'or',
+  AND = 'and',
 }
 
 export enum CandleActions {
@@ -111,6 +113,12 @@ export const algBuilder = (algToProcess: MachineAlgorithm):Algorithm => {
             str = new Crossover(stream, processedStreams[action[1] as number] as Price);
             break;
           case DecisionActions.NEGCROSSOVER:
+            str = new NegativeCrossover(stream, processedStreams[action[1] as number] as Price);
+            break;
+          case DecisionActions.OR:
+            str = new Crossover(stream, processedStreams[action[1] as number] as Price);
+            break;
+          case DecisionActions.AND:
             str = new NegativeCrossover(stream, processedStreams[action[1] as number] as Price);
             break;
           case DecisionActions.GT:

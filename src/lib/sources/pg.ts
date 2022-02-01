@@ -4,7 +4,6 @@ import { Column, CreatedAt, Model, PrimaryKey, Table, UpdatedAt, Sequelize as s 
 import { CoinbaseGranularity, CoinbaseProduct, COINBASE_EARLIEST_TIMESTAMP } from '../constants';
 import { AlgModel } from '../exec/battle';
 import { Candles } from '../streams/candles';
-import { Price } from '../streams/price';
 import { CandleActions, DecisionActions, PriceActions, SourceActions } from '../util/alg_builder';
 import { CoinbaseProCandles } from './coinbase';
 
@@ -329,6 +328,30 @@ export const seedAlgs = async (): Promise<void> => {
         [[SourceActions.CANDLES], [CandleActions.VWMACDSIG]], // signal
         [[SourceActions.STREAM, 0], [DecisionActions.CROSSOVER, 1]], // macd > sig --> bull
         [[SourceActions.STREAM, 0], [DecisionActions.NEGCROSSOVER, 1]], // sig > macd --> bear
+      ],
+      algResult: {
+        entry: 2, // bull
+        exit: 3,  // bear
+      }
+    }),
+  });
+
+  // Split bbands (from initial research)
+  await AlgModel.upsert({
+    elo: 1000,
+    bullElo: 1000,
+    bearElo: 1000,
+    count: 1,
+    bullCount: 1,
+    bearCount: 1,
+    por: 0,
+    algorithm: JSON.stringify({
+      streams: [
+        [[SourceActions.CANDLES], [CandleActions.TYPICAL]],
+        [[SourceActions.STREAM, 0],[PriceActions.BBAND, 1, 0]],
+        [[SourceActions.STREAM, 0],[PriceActions.BBAND, 0, 1]],
+        [[SourceActions.STREAM, 0],[DecisionActions.CROSSOVER, 1]],
+        [[SourceActions.STREAM, 0],[DecisionActions.NEGCROSSOVER, 2]]
       ],
       algResult: {
         entry: 2, // bull

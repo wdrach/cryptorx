@@ -28,6 +28,19 @@ export class Decision<T> extends Subject<boolean> {
   }
 }
 
+export class Or extends Decision<boolean> {
+  constructor(a: Observable<boolean>, b: Observable<boolean>) {
+    super(a, b, (a, b) => a || b);
+  }
+}
+
+export class And extends Decision<boolean> {
+  constructor(a: Observable<boolean>, b: Observable<boolean>) {
+    super(a, b, (a, b) => a && b);
+  }
+}
+
+
 export class Crossover extends Decision<number> {
   constructor(a: Price, b: Price) {
     super(a, b, (a, b) => a > b);
